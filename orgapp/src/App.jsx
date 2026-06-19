@@ -4,7 +4,7 @@ import Home from './components/Home';
 import Compras from './components/Compras';
 import Financas from './components/Financas';
 import Receitas from './components/Receitas';
-import Toast from './components/Toast';
+import Toast from './components/toast';
 
 export default function App() {
   const [sistemaAtivo, setSistemaAtivo] = useState('HOME');
