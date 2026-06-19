@@ -753,3 +753,4 @@ export default function Financas({ setSistemaAtivo, mostrarNotificacao }) {
     </div>
   );
 }
+// Fim do componente Financas.jsx
