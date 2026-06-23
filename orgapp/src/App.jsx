@@ -3,7 +3,7 @@ import './index.css'; // Importação do CSS isolado
 import Home from './components/Home';
 import Compras from './components/Compras';
 import Financas from './components/Financas';
-import Receitas from './components/Receitas';
+import Delivery from './components/Delivery';
 import Toast from './components/Toast';
 
 export default function App() {
@@ -36,9 +36,9 @@ export default function App() {
 {sistemaAtivo === 'FINANCAS' && (
   <Financas setSistemaAtivo={setSistemaAtivo} mostrarNotificacao={mostrarNotificacao} />
 )}
-{sistemaAtivo === 'RECEITAS' && (
-        <Receitas setSistemaAtivo={setSistemaAtivo} mostrarNotificacao={mostrarNotificacao} />
-      )}
+{sistemaAtivo === 'DELIVERY' && (
+  <Delivery setSistemaAtivo={setSistemaAtivo} mostrarNotificacao={mostrarNotificacao} />
+)}
       
     </div>
   );

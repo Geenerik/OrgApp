@@ -288,7 +288,7 @@ export default function Financas({ setSistemaAtivo, mostrarNotificacao }) {
 
     const valorLancamento = parseFloat(valor);
 
-    // NOVA REGRA: COMPRA INTEGRADA (CASA OU LOJA)
+    // COMPRA INTEGRADA (CASA OU LOJA)
     if (tipo === 'COMPRA_INTEGRADA') {
       const tagDestino = destinoCompra === 'LOJA' ? '[🛒 Compra Loja]' : '[🏠 Compra Casa]';
       const descricaoFinal = `${tagDestino} ${descricao}`;
@@ -326,14 +326,27 @@ export default function Financas({ setSistemaAtivo, mostrarNotificacao }) {
         if (!cartaoSelecionado) { mostrarNotificacao(`Cadastre um cartão no perfil de ${responsavelPagamento} primeiro!`, 'erro'); setSalvando(false); return; }
 
         const cardObj = cartoes.find(c => c.id === parseInt(cartaoSelecionado));
-        const diaVenc = cardObj ? cardObj.dia_vencimento : 10;
+        const diaVenc = cardObj ? parseInt(cardObj.dia_vencimento) : 10;
         const qtdParcelas = parseInt(parcelas);
         const valorDaParcela = (valorLancamento / qtdParcelas).toFixed(2);
         const listaParcelasAInserir = [];
-        const dataBase = new Date();
+        
+        // --- LÓGICA DE FECHAMENTO DE FATURA (7 DIAS ANTES) ---
+        const dataAtual = new Date();
+        let mesFaturaInicial = dataAtual.getMonth();
+        let anoFaturaInicial = dataAtual.getFullYear();
+
+        let dataFechamento = new Date(anoFaturaInicial, mesFaturaInicial, diaVenc);
+        dataFechamento.setDate(dataFechamento.getDate() - 7);
+
+        // Se a compra foi feita na data de fechamento ou depois, vai pro mês seguinte
+        if (dataAtual >= dataFechamento) {
+          mesFaturaInicial += 1;
+        }
+        // -------------------------------------------------------
 
         for (let i = 1; i <= qtdParcelas; i++) {
-          const dataParcela = new Date(dataBase.getFullYear(), dataBase.getMonth() + (i - 1), diaVenc);
+          const dataParcela = new Date(anoFaturaInicial, mesFaturaInicial + (i - 1), diaVenc);
           listaParcelasAInserir.push({
             descricao: descricaoFinal,
             valor_total: valorLancamento,
@@ -367,14 +380,27 @@ export default function Financas({ setSistemaAtivo, mostrarNotificacao }) {
     } else if (tipo === 'LANCAR_CARTAO') {
       if (!cartaoSelecionado) { mostrarNotificacao('Cadastre um cartão primeiro!', 'erro'); setSalvando(false); return; }
       const cardObj = cartoes.find(c => c.id === parseInt(cartaoSelecionado));
-      const diaVenc = cardObj ? cardObj.dia_vencimento : 10;
+      const diaVenc = cardObj ? parseInt(cardObj.dia_vencimento) : 10;
       const qtdParcelas = parseInt(parcelas);
       const valorDaParcela = (valorLancamento / qtdParcelas).toFixed(2);
       const listaParcelasAInserir = [];
-      const dataBase = new Date();
+
+      // --- LÓGICA DE FECHAMENTO DE FATURA (7 DIAS ANTES) ---
+      const dataAtual = new Date();
+      let mesFaturaInicial = dataAtual.getMonth();
+      let anoFaturaInicial = dataAtual.getFullYear();
+
+      let dataFechamento = new Date(anoFaturaInicial, mesFaturaInicial, diaVenc);
+      dataFechamento.setDate(dataFechamento.getDate() - 7);
+
+      // Se a compra foi feita na data de fechamento ou depois, vai pro mês seguinte
+      if (dataAtual >= dataFechamento) {
+        mesFaturaInicial += 1;
+      }
+      // -------------------------------------------------------
 
       for (let i = 1; i <= qtdParcelas; i++) {
-        const dataParcela = new Date(dataBase.getFullYear(), dataBase.getMonth() + (i - 1), diaVenc);
+        const dataParcela = new Date(anoFaturaInicial, mesFaturaInicial + (i - 1), diaVenc);
         listaParcelasAInserir.push({
           descricao: descricao,
           valor_total: valorLancamento,

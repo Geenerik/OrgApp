@@ -9,12 +9,15 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
   const [novoItemMarca, setNovoItemMarca] = useState('');
   const [novoItemPreco, setNovoItemPreco] = useState('');
   const [novoItemTamanho, setNovoItemTamanho] = useState('');
-  const [novoItemUnidade, setNovoItemUnidade] = useState('G'); // G, ML, KG, L, UN
+  const [novoItemUnidade, setNovoItemUnidade] = useState('G'); 
   const [novoItemCategoria, setNovoItemCategoria] = useState('Alimentos');
-  const [novoItemDestino, setNovoItemDestino] = useState('CASA'); // CASA, LOJA, AMBOS
+  const [novoItemDestino, setNovoItemDestino] = useState('CASA'); 
   const [cadastrandoFixo, setCadastrandoFixo] = useState(false);
   const [bancoProdutos, setBancoProdutos] = useState([]);
   const [modoEdicaoId, setModoEdicaoId] = useState(null); 
+  
+  // Controla a exibição da telinha flutuante de cadastro/edição
+  const [modalCadastroAberto, setModalCadastroAberto] = useState(false);
 
   // Estados da Nova Compra (Carrinho de Mercado)
   const [local, setLocal] = useState('');
@@ -37,7 +40,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
   const [cartoesDisponiveis, setCartoesDisponiveis] = useState([]);
   const [cartaoSelecionado, setCartaoSelecionado] = useState('');
 
-  // Estados do Histórico Corrigidos
+  // Estados do Histórico
   const [listaCompras, setListaCompras] = useState([]);
   const [compraSelecionada, setCompraSelecionada] = useState(null);
   const [itensDaCompraSelecionada, setItensDaCompraSelecionada] = useState([]);
@@ -90,7 +93,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
     setNovoItemUnidade(produto.unidade_medida);
     setNovoItemCategoria(produto.categoria);
     setNovoItemDestino(produto.destino_padrao);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setModalCadastroAberto(true);
   };
 
   const cancelarEdicao = () => {
@@ -102,6 +105,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
     setNovoItemUnidade('G');
     setNovoItemCategoria('Alimentos');
     setNovoItemDestino('CASA');
+    setModalCadastroAberto(false);
   };
 
   const handleCadastrarItemFixo = async (e) => {
@@ -178,8 +182,12 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
 
   const adicionarItemNaLista = async (e) => {
     if (e) e.preventDefault();
-    if (!produtoSelecionadoId || !quantidade) {
-      mostrarNotificacao('Selecione o produto e informe a quantidade!', 'erro');
+    if (!quantidade) {
+      mostrarNotificacao('Informe a quantidade!', 'erro');
+      return;
+    }
+    if (!produtoSelecionadoId) {
+      mostrarNotificacao('Selecione o produto do catálogo!', 'erro');
       return;
     }
 
@@ -222,7 +230,11 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
 
   const adicionarItemPlanejado = (e) => {
     e.preventDefault();
-    if (!prodPlanejadoId || !qtdPlanejada) return;
+    if (!qtdPlanejada) {
+      mostrarNotificacao('Informe a quantidade necessária!', 'erro');
+      return;
+    }
+    if (!prodPlanejadoId) return;
 
     const prod = bancoProdutos.find(p => p.id === parseInt(prodPlanejadoId));
     if (!prod) return;
@@ -234,6 +246,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
     }
 
     setItensPlanejados([...itensPlanejados, {
+      id_interno: Date.now() + Math.random(),
       produto_id: prod.id,
       nome: prod.nome,
       marca: prod.marca,
@@ -253,7 +266,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
 
     if (precoDigitado !== '' && parseFloat(precoDigitado) > 0) {
       precoFinal = parseFloat(precoDigitado);
-      if (precoFinal !== item.preco_base) {
+      if (item.produto_id && precoFinal !== item.preco_base) {
         deveAtualizarBanco = true;
       }
     }
@@ -268,11 +281,11 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
     };
 
     setItens([...itens, novoItem]);
-    setItensPlanejados(itensPlanejados.filter(p => p.produto_id !== item.produto_id));
+    setItensPlanejados(itensPlanejados.filter(p => p.id_interno !== item.id_interno));
 
     if (deveAtualizarBanco) {
       await supabase.from('produtos_cadastrados').update({ preco_base: precoFinal }).eq('id', item.produto_id);
-      mostrarNotificacao('Pegou! Preço updated no catálogo.');
+      mostrarNotificacao('Pegou! Preço atualizado no catálogo.');
     } else {
       mostrarNotificacao('Item jogado para o carrinho!');
     }
@@ -402,7 +415,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
 
   return (
     <div>
-      {/* MODAL INTEGRADO */}
+      {/* MODAL FINANCEIRO */}
       {modalFinanceiroAberto && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '16px', boxSizing: 'border-box' }}>
           <div className="card-app" style={{ width: '100%', maxWidth: '380px', padding: '24px' }}>
@@ -451,7 +464,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
       <nav className="nav-abas">
         <button onClick={() => setAbaAtual('NOVA')} className={`btn-aba ${abaAtual === 'NOVA' ? 'btn-aba-ativa' : ''}`}>🛒 Carrinho</button>
         <button onClick={() => setAbaAtual('PLANEJAR')} className={`btn-aba ${abaAtual === 'PLANEJAR' ? 'btn-aba-ativa' : ''}`}>📝 Planejar Lista</button>
-        <button onClick={() => setAbaAtual('CADASTRO')} className={`btn-aba ${abaAtual === 'CADASTRO' ? 'btn-aba-ativa' : ''}`}>📦 Cadastrar Insumo</button>
+        <button onClick={() => setAbaAtual('CADASTRO')} className={`btn-aba ${abaAtual === 'CADASTRO' ? 'btn-aba-ativa' : ''}`}>📦 Itens Cadastrados</button>
         <button onClick={() => setAbaAtual('HISTORICO')} className={`btn-aba ${abaAtual === 'HISTORICO' ? 'btn-aba-ativa' : ''}`}>📜 Histórico Notas</button>
       </nav>
 
@@ -466,12 +479,20 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
             </div>
             
             <form onSubmit={adicionarItemPlanejado} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <select value={prodPlanejadoId} onChange={(e) => setProdPlanejadoId(e.target.value)} className="select-padrao" required>
-                <option value="">-- Escolha do Catálogo --</option>
-                {produtosFiltradosPorDestino.map(p => <option key={p.id} value={p.id}>{p.nome} ({p.marca}) - {p.tamanho_embalagem}{p.unidade_medida.toLowerCase()}</option>)}
-              </select>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '700', color: '#4b5563' }}>PRODUTOS CADASTRADOS</label>
+                {produtosFiltradosPorDestino.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>⚠️ Cadastre os itens na aba "Itens Cadastrados" primeiro!</p>
+                ) : (
+                  <select value={prodPlanejadoId} onChange={(e) => setProdPlanejadoId(e.target.value)} className="select-padrao" required>
+                    <option value="">-- Escolha do Catálogo --</option>
+                    {produtosFiltradosPorDestino.map(p => <option key={p.id} value={p.id}>{p.nome} ({p.marca}) - {p.tamanho_embalagem}{p.unidade_medida.toLowerCase()}</option>)}
+                  </select>
+                )}
+              </div>
+
               <input type="number" step="0.01" value={qtdPlanejada} onChange={(e) => setQtdPlanejada(e.target.value)} placeholder="Quantidade Necessária" className="input-padrao" required />
-              <button type="submit" style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>... Anotar na Lista de Faltas</button>
+              <button type="submit" disabled={produtosFiltradosPorDestino.length === 0} style={{ width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>... Anotar na Lista de Faltas</button>
             </form>
           </section>
 
@@ -479,12 +500,14 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
             <h3 style={{ marginTop: 0, marginBottom: '14px', fontSize: '16px' }}>📋 Lista de Faltas Ativa ({tipoCompra})</h3>
             {itensPlanejados.length === 0 ? <p style={{ fontSize: '13px', color: '#9ca3af', textAlign: 'center', padding: '20px' }}>Nenhum item pendente. Tudo abastecido!</p> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {itensPlanejados.map((item, idx) => {
+                {itensPlanejados.map((item) => {
                   let precoTemp = '';
                   return (
-                    <div key={idx} style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={item.id_interno} style={{ padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontWeight: '700', fontSize: '14px' }}><span style={{ color: '#2563eb' }}>{item.quantidade}x</span> {item.nome}</div>
+                        <div style={{ fontWeight: '700', fontSize: '14px' }}>
+                          <span style={{ color: '#2563eb' }}>{item.quantidade}x</span> {item.nome}
+                        </div>
                         <small style={{ color: '#64748b' }}>Marca: {item.marca} | Valor Base: R$ {item.preco_base?.toFixed(2)}</small>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -502,7 +525,7 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
                         >
                           🛒 Pego
                         </button>
-                        <button onClick={() => setItensPlanejados(itensPlanejados.filter(p => p.produto_id !== item.produto_id))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>🗑️</button>
+                        <button onClick={() => setItensPlanejados(itensPlanejados.filter(p => p.id_interno !== item.id_interno))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>🗑️</button>
                       </div>
                     </div>
                   );
@@ -528,11 +551,12 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
 
             <section className="card-app">
               <h3 style={{ marginTop: 0, marginBottom: '14px', fontSize: '16px', fontWeight: '700' }}>2. Detalhes da Compra</h3>
+
               <form onSubmit={adicionarItemNaLista} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '700', color: '#4b5563' }}>PRODUTOS CADASTRADOS</label>
                   {produtosFiltradosPorDestino.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>⚠️ Cadastre os itens na aba "Cadastrar Insumo" primeiro!</p>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>⚠️ Cadastre os itens na aba "Itens Cadastrados" primeiro!</p>
                   ) : (
                     <select value={produtoSelecionadoId} onChange={(e) => setProdutoSelecionadoId(e.target.value)} className="select-padrao" required>
                       <option value="">-- Selecione o Item --</option>
@@ -549,10 +573,12 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
 
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <input type="number" step="0.001" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="Qtd" className="input-padrao" style={{ width: '35%' }} required />
-                  <input type="number" step="0.01" value={valorUnitario} onChange={(e) => setValorUnitario(e.target.value)} placeholder={produtoAtualEmUso ? `R$ (${produtoAtualEmUso.preco_base?.toFixed(2)})` : "R$ Valor Unitário"} className="input-padrao" style={{ width: '65%' }} />
+                  <input type="number" step="0.01" value={valorUnitario} onChange={(e) => setValorUnitario(e.target.value)} placeholder={produtoAtualEmUso ? `R$ (${produtoAtualEmUso.preco_base?.toFixed(2)})` : "R$ Valor Real Pago"} className="input-padrao" style={{ width: '65%' }} />
                 </div>
                 
-                <button type="submit" disabled={produtosFiltradosPorDestino.length === 0} style={{ width: '100%', backgroundColor: '#1e3a8a', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '15px' }}>＋ Adicionar ao Carrinho</button>
+                <button type="submit" disabled={produtosFiltradosPorDestino.length === 0} style={{ width: '100%', backgroundColor: '#1e3a8a', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '15px' }}>
+                  ＋ Adicionar ao Carrinho
+                </button>
               </form>
             </section>
           </div>
@@ -567,7 +593,11 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
                 <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '16px', paddingRight: '4px' }}>
                   {itens.map((item) => (
                     <div key={item.id_interno} style={{ padding: '10px 0', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
-                      <span><strong style={{color: '#1e3a8a'}}>{item.quantidade}x</strong> {item.produto}</span>
+                      <span>
+                        <strong style={{color: '#1e3a8a'}}>
+                          {item.quantidade}x
+                        </strong> {item.produto}
+                      </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={{ fontWeight: '600' }}>R$ {(item.quantidade * item.valor_unitario).toFixed(2)}</span>
                         <button onClick={() => removerItemDoCarrinho(item.id_interno)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontSize: '14px' }}>🗑️</button>
@@ -589,119 +619,140 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
         </div>
       )}
 
-      {/* ABA: CADASTRO DETALHADO REESTRUTURADO PARTE TÉCNICA */}
+      {/* ABA: LISTA DE ITENS CADASTRADOS */}
       {abaAtual === 'CADASTRO' && (
-        <div style={{ maxWidth: '500px', margin: '0 auto' }}>
+        <div style={{ maxWidth: '600px', margin: '0 auto' }}>
           <section className="card-app">
-            <h3 style={{ marginTop: 0, marginBottom: '14px', fontSize: '16px', fontWeight: '700', color: modoEdicaoId ? '#ea580c' : '#1e3a8a' }}>
-              {modoEdicaoId ? '✏️ Alterar Preço / Detalhes' : 'Ficha Técnica do Produto'}
-            </h3>
-            <form onSubmit={handleCadastrarItemFixo} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>NOME DO COMPONENTE / ITEM</label>
-                <input type="text" value={novoItemNome} onChange={(e) => setNovoItemNome(e.target.value)} placeholder="Ex: Leite Condensado, Creme de Leite" className="input-padrao" required />
-              </div>
-              
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>MARCA / FABRICANTE</label>
-                <input type="text" value={novoItemMarca} onChange={(e) => setNovoItemMarca(e.target.value)} placeholder="Ex: Moça, Itambé, Nestlé" className="input-padrao" />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>UNIDADE DE MEDIDA DE COMPRA</label>
-                  <select value={novoItemUnidade} onChange={(e) => setNovoItemUnidade(e.target.value)} className="select-padrao">
-                    <option value="G">g (Gramas)</option>
-                    <option value="KG">kg (Quilos)</option>
-                    <option value="ML">ml (Mililitros)</option>
-                    <option value="L">L (Litros)</option>
-                    <option value="UN">un (Unidade/Caixa/Lata)</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>VALOR UNITÁRIO (R$)</label>
-                  <input type="number" step="0.01" value={novoItemPreco} onChange={(e) => setNovoItemPreco(e.target.value)} placeholder="Custo Estimado" className="input-padrao" required />
-                </div>
-              </div>
-
-              {/* CAMPO DE PESO INTEGRADO E EXPLÍCITO SOLICITADO */}
-              <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '800', color: '#7c3aed' }}>
-                  {novoItemUnidade === 'UN' 
-                    ? '⚖️ PESO LÍQUIDO DA UNIDADE (Gramas ou ML por caixa/lata)' 
-                    : '⚖️ CONTEÚDO DA EMBALAGEM'}
-                </label>
-                <input 
-                  type="number" 
-                  step="0.001" 
-                  value={novoItemTamanho} 
-                  onChange={(e) => setNovoItemTamanho(e.target.value)} 
-                  placeholder={novoItemUnidade === 'UN' ? "Ex: Se for caixa de leite condensado, coloque 395" : "Ex: 200, 500, 1"} 
-                  className="input-padrao" 
-                  style={{ borderColor: '#a78bfa' }} 
-                  required 
-                />
-                <small style={{ color: '#6b7280', fontSize: '11px', marginTop: '4px', display: 'block' }}>
-                  {novoItemUnidade === 'UN' 
-                    ? '💡 Fundamental para a Confeitaria: digite o peso em gramas/ml para o sistema somar o Peso Cru da receita automaticamente quando você usar 1 unidade.' 
-                    : 'Indique a cubagem ou peso da embalagem fechada do item.'}
-                </small>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>DESTINO DO INSUMO</label>
-                <select value={novoItemDestino} onChange={(e) => setNovoItemDestino(e.target.value)} className="select-padrao">
-                  <option value="CASA">🏠 Uso em Casa</option>
-                  <option value="LOJA">🏪 Insumo da Loja (Mimos Doces)</option>
-                  <option value="AMBOS">🔄 Ambos (Casa e Loja)</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>CATEGORIA</label>
-                <select value={novoItemCategoria} onChange={(e) => setNovoItemCategoria(e.target.value)} className="select-padrao">
-                  <option value="Alimentos">Alimentos</option>
-                  <option value="Insumos/Embalagens">Insumos / Embalagens</option>
-                  <option value="Limpeza">Limpeza</option>
-                  <option value="Higiene">Higiene</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                {modoEdicaoId && (
-                  <button type="button" onClick={cancelarEdicao} style={{ width: '35%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
-                    Cancelar
-                  </button>
-                )}
-                <button type="submit" disabled={cadastrandoFixo} style={{ flex: 1, backgroundColor: modoEdicaoId ? '#ea580c' : '#1e3a8a', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
-                  {cadastrandoFixo ? 'Salvando...' : modoEdicaoId ? '🔒 Salvar Alteração' : '🔒 Adicionar Item ao Catálogo'}
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <section className="card-app" style={{ marginTop: '16px' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '15px' }}>Insumos Cadastrados ({bancoProdutos.length})</h3>
-            <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {bancoProdutos.map(p => (
-                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', backgroundColor: modoEdicaoId === p.id ? '#ffedd5' : '#f9fafb', border: modoEdicaoId === p.id ? '1px solid #fed7aa' : '1px solid #e5e7eb', borderRadius: '6px', fontSize: '13px' }}>
-                  <div>
-                    <span><strong>{p.nome}</strong> ({p.marca})</span>
-                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>Destino: {p.destino_padrao}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <small style={{ color: '#7c3aed', fontWeight: '700', marginRight: '6px' }}>{p.tamanho_embalagem}{p.unidade_medida.toLowerCase()} • R$ {p.preco_base?.toFixed(2)}</small>
-                    <button onClick={() => iniciarEdicaoInsumo(p)} title="Alterar Item" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '6px' }}>✏️</button>
-                    <button onClick={() => deletarInsumoDoBanco(p.id, p.nome)} title="Excluir Permanentemente" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '6px' }}>🗑️</button>
-                  </div>
-                </div>
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #f3f4f6', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e3a8a' }}>Catálogo de Itens Cadastrados ({bancoProdutos.length})</h3>
+              <button 
+                onClick={() => { cancelarEdicao(); setModalCadastroAberto(true); }} 
+                style={{ backgroundColor: '#1e3a8a', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}
+              >
+                ＋ Cadastrar Novo
+              </button>
             </div>
+
+            {bancoProdutos.length === 0 ? (
+              <p style={{ textAlign: 'center', color: '#9ca3af', padding: '20px', fontSize: '14px' }}>Nenhum item fixo catalogado ainda.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '480px', overflowY: 'auto', paddingRight: '4px' }}>
+                {bancoProdutos.map(p => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '13px' }}>
+                    <div>
+                      <span style={{ fontWeight: '700', color: '#1f2937' }}>{p.nome}</span> <small style={{color: '#6b7280'}}>({p.marca})</small>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '3px' }}>Destino: {p.destino_padrao} | Categoria: {p.categoria}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <small style={{ color: '#7c3aed', fontWeight: '800', marginRight: '8px', fontSize: '12px' }}>
+                        {p.tamanho_embalagem}{p.unidade_medida.toLowerCase()} • R$ {p.preco_base?.toFixed(2)}
+                      </small>
+                      <button onClick={() => iniciarEdicaoInsumo(p)} title="Alterar Item" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '6px' }}>✏️</button>
+                      <button onClick={() => deletarInsumoDoBanco(p.id, p.nome)} title="Excluir Permanentemente" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '6px' }}>🗑️</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
+
+          {/* TELINHA FLUTUANTE (MODAL INTERNO) PARA CADASTRO / EDIÇÃO */}
+          {modalCadastroAberto && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '16px', boxSizing: 'border-box' }}>
+              <div className="card-app" style={{ width: '100%', maxWidth: '460px', padding: '24px', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #f3f4f6', paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: modoEdicaoId ? '#ea580c' : '#1e3a8a' }}>
+                    {modoEdicaoId ? '✏️ Alterar Detalhes do Item' : '📦 Adicionar Item ao Catálogo'}
+                  </h3>
+                  <button onClick={cancelarEdicao} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', fontWeight: '700', color: '#9ca3af' }}>✕</button>
+                </div>
+
+                <form onSubmit={handleCadastrarItemFixo} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>NOME DO COMPONENTE / ITEM</label>
+                    <input type="text" value={novoItemNome} onChange={(e) => setNovoItemNome(e.target.value)} placeholder="Ex: Leite Condensado, Creme de Leite" className="input-padrao" required />
+                  </div>
+                  
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>MARCA / FABRICANTE</label>
+                    <input type="text" value={novoItemMarca} onChange={(e) => setNovoItemMarca(e.target.value)} placeholder="Ex: Moça, Itambé, Nestlé" className="input-padrao" />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>UNIDADE DE MEDIDA DE COMPRA</label>
+                      <select value={novoItemUnidade} onChange={(e) => setNovoItemUnidade(e.target.value)} className="select-padrao">
+                        <option value="G">g (Gramas)</option>
+                        <option value="KG">kg (Quilos)</option>
+                        <option value="ML">ml (Mililitros)</option>
+                        <option value="L">L (Litros)</option>
+                        <option value="UN">un (Unidade/Caixa/Lata)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>VALOR UNITÁRIO (R$)</label>
+                      <input type="number" step="0.01" value={novoItemPreco} onChange={(e) => setNovoItemPreco(e.target.value)} placeholder="Custo Estimado" className="input-padrao" required />
+                    </div>
+                  </div>
+
+                  <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '800', color: '#7c3aed' }}>
+                      {novoItemUnidade === 'UN' 
+                        ? '⚖️ PESO LÍQUIDO DA UNIDADE (Gramas ou ML por caixa/lata)' 
+                        : '⚖️ CONTEÚDO DA EMBALAGEM'}
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.001" 
+                      value={novoItemTamanho} 
+                      onChange={(e) => setNovoItemTamanho(e.target.value)} 
+                      placeholder={novoItemUnidade === 'UN' ? "Ex: Se for caixa de leite condensado, coloque 395" : "Ex: 200, 500, 1"} 
+                      className="input-padrao" 
+                      style={{ borderColor: '#a78bfa' }} 
+                      required 
+                    />
+                    <small style={{ color: '#6b7280', fontSize: '11px', marginTop: '4px', display: 'block' }}>
+                      {novoItemUnidade === 'UN' 
+                        ? '💡 Fundamental para a Confeitaria: digite o peso em gramas/ml para o sistema somar o Peso Cru da receita automaticamente quando você usar 1 unidade.' 
+                        : 'Indique a cubagem ou peso da embalagem fechada do item.'}
+                    </small>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>DESTINO DO INSUMO</label>
+                    <select value={novoItemDestino} onChange={(e) => setNovoItemDestino(e.target.value)} className="select-padrao">
+                      <option value="CASA">🏠 Uso em Casa</option>
+                      <option value="LOJA">🏪 Insumo da Loja (Mimos Doces)</option>
+                      <option value="AMBOS">🔄 Ambos (Casa e Loja)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#4b5563' }}>CATEGORIA</label>
+                    <select value={novoItemCategoria} onChange={(e) => setNovoItemCategoria(e.target.value)} className="select-padrao">
+                      <option value="Alimentos">Alimentos</option>
+                      <option value="Insumos/Embalagens">Insumos / Embalagens</option>
+                      <option value="Limpeza">Limpeza</option>
+                      <option value="Higiene">Higiene</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <button type="button" onClick={cancelarEdicao} style={{ width: '35%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#fff', color: '#4b5563', fontWeight: '700', cursor: 'pointer' }}>
+                      Cancelar
+                    </button>
+                    <button type="submit" disabled={cadastrandoFixo} style={{ flex: 1, backgroundColor: modoEdicaoId ? '#ea580c' : '#1e3a8a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
+                      {cadastrandoFixo ? 'Salvando...' : modoEdicaoId ? '🔒 Salvar Alteração' : '🔒 Adicionar Item'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ABA: HISTÓRICO COM EXIBIÇÃO DE VALORES REAIS HISTÓRICOS */}
+      {/* ABA: HISTÓRICO */}
       {abaAtual === 'HISTORICO' && (
         <div className="grid-layout">
           <div className={compraSelecionada ? '' : 'col-inteira'}>
@@ -733,7 +784,6 @@ export default function Compras({ setSistemaAtivo, mostrarNotificacao }) {
             </section>
           </div>
 
-          {/* PAINEL DE DETALHES DA NOTA COMPRADA */}
           {compraSelecionada && (
             <div className="card-app">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6', paddingBottom: '12px', marginBottom: '14px' }}>

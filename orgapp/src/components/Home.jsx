@@ -18,12 +18,12 @@ export default function Home({ setSistemaAtivo, mostrarNotificacao }) {
           </div>
         </div>
 
-        {/* Opção 2: Ficha Técnica de Receitas (MÓDULO ATIVADO) */}
-        <div className="card-sistema" onClick={() => setSistemaAtivo('RECEITAS')}>
-          <div className="icone-sistema">🍰</div>
+        {/* Opção 2: Gestão de Delivery (ATUALIZADO) */}
+        <div className="card-sistema" onClick={() => setSistemaAtivo('DELIVERY')}>
+          <div className="icone-sistema">🛵</div>
           <div>
-            <h3 style={{ margin: '0 0 4px 0', color: '#7c3aed', fontSize: '18px', fontWeight: '700' }}>Ficha de Receitas</h3>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '13px' }}>Criação de receitas e cálculo de custo automático usando os itens de compras.</p>
+            <h3 style={{ margin: '0 0 4px 0', color: '#7c3aed', fontSize: '18px', fontWeight: '700' }}>Gestão de Delivery</h3>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '13px' }}>Fichas técnicas completas do cardápio, quebra térmica, embalagens e precificação.</p>
           </div>
         </div>
 
