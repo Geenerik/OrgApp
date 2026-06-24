@@ -27,6 +27,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   const [edicaoBaseId, setEdicaoBaseId] = useState(null);
   const [baseNome, setBaseNome] = useState('');
   const [basePesoPronto, setBasePesoPronto] = useState('');
+  const [baseTempoPreparo, setBaseTempoPreparo] = useState(''); // <--- NOVO
   const [baseIngredientes, setBaseIngredientes] = useState([]);
   const [baseInsumoSelecionadoId, setBaseInsumoSelecionadoId] = useState('');
   const [baseQtdUsada, setBaseQtdUsada] = useState('');
@@ -51,6 +52,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   const [abaMontagem, setAbaMontagem] = useState('LISTA');
   const [edicaoMontId, setEdicaoMontId] = useState(null); 
   const [montNome, setMontNome] = useState('');
+  const [montTempoMontagem, setMontTempoMontagem] = useState(''); // <--- NOVO
   const [montItensTemp, setMontItensTemp] = useState([]);
   const [montTipoPeca, setMontTipoPeca] = useState('BASE');
   const [montPecaId, setMontPecaId] = useState('');
@@ -65,7 +67,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   const [simuladorProdutoId, setSimuladorProdutoId] = useState('');
   const [simuladorLucroPerc, setSimuladorLucroPerc] = useState('20');
   const [lucrosSimulador, setLucrosSimulador] = useState({});
-  const [precosSimulador, setPrecosSimulador] = useState({}); // <--- NOVO ESTADO: Guarda os seus preços reais
+  const [precosSimulador, setPrecosSimulador] = useState({}); 
 
   // ==========================================
   // ESTADOS DA ABA 5: CUSTOS E TAXAS
@@ -147,15 +149,34 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
 
   useEffect(() => { buscarDadosIniciais(); }, [moduloAtivo]);
 
-  const callbackCustoItem = (item) => {
-    if (!item.preco_base) return 0;
-    if (item.unidade_medida?.toUpperCase() === 'UN') return item.quantidade_usada * item.preco_base;
-    if (item.tamanho_embalagem > 0) {
-      const divisor = item.unidade_medida?.toUpperCase() === 'KG' || item.unidade_medida?.toUpperCase() === 'L' ? 1000 : 1;
-      const pacotesNecessarios = Math.ceil(item.peso_calculado_gramas / (item.tamanho_embalagem * divisor));
-      return pacotesNecessarios * item.preco_base;
+  // ==========================================
+  // MOTORES MATEMÁTICOS DE PRECIFICAÇÃO PROPORCIONAL EXATA
+  // ==========================================
+  const calcularCustoProporcional = (item) => {
+    if (!item || !item.preco_base) return 0;
+    const precoPacote = parseFloat(item.preco_base) || 0;
+    const qtdUsada = parseFloat(item.quantidade_usada) || 0;
+    let tamanhoEmbalagem = parseFloat(item.tamanho_embalagem) || 1;
+    const unidade = (item.unidade_medida || '').toUpperCase().trim();
+
+    if (unidade === 'KG' || unidade === 'L' || unidade === 'LITRO') {
+      tamanhoEmbalagem = tamanhoEmbalagem * 1000;
     }
-    return (item.quantidade_usada / (item.tamanho_embalagem || 1)) * item.preco_base;
+
+    const precoUnitario = precoPacote / tamanhoEmbalagem;
+    return qtdUsada * precoUnitario;
+  };
+
+  const callbackCustoItem = (item) => calcularCustoProporcional(item);
+
+  // Calcula o custo do tempo baseado nas despesas fixas
+  const despesasFixasReais = itensCusto.filter(i => !i.is_percentual && i.categoria !== 'Canais de Venda (Plataformas)');
+  const totalCustosMensaisFixos = despesasFixasReais.reduce((acc, i) => acc + parseFloat(i.valor), 0);
+  
+  const calcularCustoTempoMinutos = (minutos) => {
+    const min = parseFloat(minutos) || 0;
+    const valorHora = custosGlobais.horas_mes > 0 ? (totalCustosMensaisFixos / custosGlobais.horas_mes) : 0;
+    return (valorHora / 60) * min;
   };
 
   const obterCustoGramaBase = (baseId) => {
@@ -165,16 +186,19 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     let custoTotal = 0;
     meusIngs.forEach(it => {
       const p = it.produtos_cadastrados;
-      let pesoG = it.quantidade_usada;
-      if (p.unidade_medida.toUpperCase() === 'UN') pesoG = it.quantidade_usada * (parseFloat(p.tamanho_embalagem) || 1);
-      else if (p.unidade_medida.toUpperCase() === 'KG' || p.unidade_medida.toUpperCase() === 'L') pesoG = it.quantidade_usada * 1000;
-      custoTotal += callbackCustoItem({ preco_base: p.preco_base, unidade_medida: p.unidade_medida, tamanho_embalagem: p.tamanho_embalagem, quantidade_usada: it.quantidade_usada, peso_calculado_gramas: pesoG });
+      custoTotal += calcularCustoProporcional({
+        preco_base: p.preco_base,
+        tamanho_embalagem: p.tamanho_embalagem,
+        unidade_medida: p.unidade_medida,
+        quantidade_usada: it.quantidade_usada
+      });
     });
-    return custoTotal / base.peso_final_real_gramas;
+    
+    // O custo final da grama da base soma o custo de preparo se existir
+    const custoTempo = calcularCustoTempoMinutos(base.tempo_preparo || 0);
+    return (custoTotal + custoTempo) / base.peso_final_real_gramas;
   };
 
-  const despesasFixasReais = itensCusto.filter(i => !i.is_percentual && i.categoria !== 'Canais de Venda (Plataformas)');
-  const totalCustosMensaisFixos = despesasFixasReais.reduce((acc, i) => acc + parseFloat(i.valor), 0);
   const percentualSobreFaturamento = custosGlobais.faturamento_meta > 0 ? (totalCustosMensaisFixos / custosGlobais.faturamento_meta) * 100 : 0;
   const valorDaHoraCalc = custosGlobais.horas_mes > 0 ? (totalCustosMensaisFixos / custosGlobais.horas_mes) : 0;
 
@@ -203,17 +227,13 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
       mostrarNotificacao('Este ingrediente já está na panela!', 'erro'); return;
     }
 
-    let pesoG = parseFloat(baseQtdUsada);
-    if (prod.unidade_medida.toUpperCase() === 'UN') pesoG = parseFloat(baseQtdUsada) * (parseFloat(prod.tamanho_embalagem) || 1);
-    else if (prod.unidade_medida.toUpperCase() === 'KG' || prod.unidade_medida.toUpperCase() === 'L') pesoG = parseFloat(baseQtdUsada) * 1000;
-
     setBaseIngredientes([...baseIngredientes, {
       id_interno: Date.now() + Math.random(),
       produto_id: prod.id,
       nome: prod.nome,
       marca: prod.marca,
       quantidade_usada: parseFloat(baseQtdUsada),
-      peso_calculado_gramas: pesoG,
+      peso_calculado_gramas: parseFloat(baseQtdUsada), // O motor novo faz a conversão direta, peso bruto não é mais obrigatório aqui
       unidade_medida: prod.unidade_medida,
       tamanho_embalagem: prod.tamanho_embalagem,
       preco_base: prod.preco_base || 0
@@ -230,19 +250,20 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
 
     setSalvandoBase(true);
     const pr = parseFloat(basePesoPronto);
+    const minPreparo = parseInt(baseTempoPreparo) || 0;
 
     if (edicaoBaseId) {
-      await supabase.from('receitas').update({ nome: baseNome, peso_final_real_gramas: pr, peso_porcao_gramas: pr }).eq('id', edicaoBaseId);
+      await supabase.from('receitas').update({ nome: baseNome, peso_final_real_gramas: pr, peso_porcao_gramas: pr, tempo_preparo: minPreparo }).eq('id', edicaoBaseId);
       await supabase.from('ingredientes_receita').delete().eq('receita_id', edicaoBaseId);
       await supabase.from('ingredientes_receita').insert(baseIngredientes.map(i => ({ receita_id: edicaoBaseId, produto_id: i.produto_id, quantidade_usada: i.quantidade_usada })));
       mostrarNotificacao('Base atualizada com sucesso!');
     } else {
-      const { data: novaRec } = await supabase.from('receitas').insert([{ nome: baseNome, rendimento_unidades: 1, peso_porcao_gramas: pr, peso_final_real_gramas: pr }]).select();
+      const { data: novaRec } = await supabase.from('receitas').insert([{ nome: baseNome, rendimento_unidades: 1, peso_porcao_gramas: pr, peso_final_real_gramas: pr, tempo_preparo: minPreparo }]).select();
       await supabase.from('ingredientes_receita').insert(baseIngredientes.map(i => ({ receita_id: novaRec[0].id, produto_id: i.produto_id, quantidade_usada: i.quantidade_usada })));
       mostrarNotificacao('Nova base catalogada!');
     }
 
-    setBaseNome(''); setBasePesoPronto(''); setBaseIngredientes([]); setEdicaoBaseId(null);
+    setBaseNome(''); setBasePesoPronto(''); setBaseTempoPreparo(''); setBaseIngredientes([]); setEdicaoBaseId(null);
     setAbaBases('LISTA');
     buscarDadosIniciais();
     setSalvandoBase(false);
@@ -255,10 +276,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     if (data) {
       setBaseDetalhesExpandidos(data.map(it => {
         const p = it.produtos_cadastrados;
-        let pesoG = it.quantidade_usada;
-        if (p.unidade_medida.toUpperCase() === 'UN') pesoG = it.quantidade_usada * (parseFloat(p.tamanho_embalagem) || 1);
-        else if (p.unidade_medida.toUpperCase() === 'KG' || p.unidade_medida.toUpperCase() === 'L') pesoG = it.quantidade_usada * 1000;
-        return { nome: p.nome, marca: p.marca, quantidade_usada: it.quantidade_usada, peso_calculado_gramas: pesoG, tamanho_embalagem: p.tamanho_embalagem, unidade_medida: p.unidade_medida, preco_base: p.preco_base || 0 };
+        return { nome: p.nome, marca: p.marca, quantidade_usada: it.quantidade_usada, peso_calculado_gramas: it.quantidade_usada, tamanho_embalagem: p.tamanho_embalagem, unidade_medida: p.unidade_medida, preco_base: p.preco_base || 0 };
       }));
     }
   };
@@ -301,6 +319,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     e.stopPropagation();
     setEdicaoMontId(mont.id);
     setMontNome(mont.nome);
+    setMontTempoMontagem(mont.tempo_montagem?.toString() || '');
     setMontExpandida(null); 
 
     setCarregando(true);
@@ -354,10 +373,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     } else if (montTipoPeca === 'INSUMO') {
       const ins = bancoProdutos.find(p => p.id === parseInt(alvoId));
       if (!ins) return;
-      let pesoG = qtdNum;
-      if (ins.unidade_medida.toUpperCase() === 'UN') pesoG = qtdNum * (parseFloat(ins.tamanho_embalagem) || 1);
-      else if (ins.unidade_medida.toUpperCase() === 'KG' || ins.unidade_medida.toUpperCase() === 'L') pesoG = qtdNum * 1000;
-      custoCalc = callbackCustoItem({ preco_base: ins.preco_base, unidade_medida: ins.unidade_medida, tamanho_embalagem: ins.tamanho_embalagem, quantidade_usada: qtdNum, peso_calculado_gramas: pesoG });
+      custoCalc = callbackCustoItem({ preco_base: ins.preco_base, unidade_medida: ins.unidade_medida, tamanho_embalagem: ins.tamanho_embalagem, quantidade_usada: qtdNum, peso_calculado_gramas: qtdNum });
       nomeExibicao = `[Topping] ${ins.nome}`;
       detalhe = `${qtdNum} ${ins.unidade_medida.toLowerCase()}`;
     }
@@ -381,23 +397,28 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     if (montItensTemp.length === 0) { mostrarNotificacao('Adicione componentes à montagem!', 'erro'); return; }
 
     setSalvandoMontagem(true);
-    const custoTotal = montItensTemp.reduce((acc, i) => acc + i.custo_calculado, 0);
+    
+    // Soma custo das peças com o custo do tempo preenchido
+    const custoPecas = montItensTemp.reduce((acc, i) => acc + i.custo_calculado, 0);
+    const minMont = parseInt(montTempoMontagem) || 0;
+    const custoTempoMontagem = calcularCustoTempoMinutos(minMont);
+    const custoTotal = custoPecas + custoTempoMontagem;
 
     if (edicaoMontId) {
-      await supabase.from('cardapio_montagens').update({ nome: montNome, custo_total: custoTotal }).eq('id', edicaoMontId);
+      await supabase.from('cardapio_montagens').update({ nome: montNome, custo_total: custoTotal, tempo_montagem: minMont }).eq('id', edicaoMontId);
       await supabase.from('itens_montagem').delete().eq('montagem_id', edicaoMontId);
       const payloadItens = montItensTemp.map(it => ({ montagem_id: edicaoMontId, tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, quantidade: it.quantidade, custo_calculado: it.custo_calculado }));
       await supabase.from('itens_montagem').insert(payloadItens);
       mostrarNotificacao('Montagem alterada com sucesso! ✏️');
     } else {
-      const { data: novaMont, error } = await supabase.from('cardapio_montagens').insert([{ nome: montNome, preco_venda: 0, custo_total: custoTotal }]).select();
+      const { data: novaMont, error } = await supabase.from('cardapio_montagens').insert([{ nome: montNome, preco_venda: 0, custo_total: custoTotal, tempo_montagem: minMont }]).select();
       if (error) { mostrarNotificacao('Erro: ' + error.message, 'erro'); setSalvandoMontagem(false); return; }
       const payloadItens = montItensTemp.map(it => ({ montagem_id: novaMont[0].id, tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, quantidade: it.quantidade, custo_calculado: it.custo_calculado }));
       await supabase.from('itens_montagem').insert(payloadItens);
       mostrarNotificacao('Produto montado salvo com sucesso! 💎');
     }
 
-    setMontNome(''); setMontItensTemp([]); setEdicaoMontId(null);
+    setMontNome(''); setMontTempoMontagem(''); setMontItensTemp([]); setEdicaoMontId(null);
     setAbaMontagem('LISTA');
     buscarDadosIniciais();
     setSalvandoMontagem(false);
@@ -410,7 +431,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   };
 
   // ==========================================
-  // HANDLERS ABA 5: CUSTOS
+  // HANDLERS ABA 5: CUSTOS E TAXAS
   // ==========================================
   const handleSalvarItemCusto = async (e) => {
     e.preventDefault();
@@ -432,9 +453,6 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     setSalvandoCusto(false);
   };
 
-  // ==========================================
-  // EXCLUSÃO UNIVERSAL
-  // ==========================================
   const confirmarExclusaoGeral = async () => {
     const { tipo, item } = modalExclusao;
     if (!item) return;
@@ -457,11 +475,9 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     buscarDadosIniciais();
   };
 
+  // Auxiliares visuais para as quebras térmicas de Bases
   const custoInsumosBaseCru = baseIngredientes.reduce((acc, i) => acc + callbackCustoItem(i), 0);
-  const pesoCruSomadoBase = baseIngredientes.reduce((acc, i) => acc + i.peso_calculado_gramas, 0);
-  const pesoRealBaseNum = parseFloat(basePesoPronto) || 0;
-  const reducaoEvapBase = pesoCruSomadoBase > 0 && pesoRealBaseNum > 0 ? ((pesoCruSomadoBase - pesoRealBaseNum) / pesoCruSomadoBase) * 100 : 0;
-
+  
   return (
     <div>
       <button className="btn-voltar" onClick={() => setSistemaAtivo('HOME')}>🏠 Voltar ao Hub</button>
@@ -492,40 +508,24 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                 <section className="card-app">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #f3f4f6', paddingBottom: '12px' }}>
                     <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1f2937' }}>Receitas Base Cadastradas</h3>
-                    <button type="button" onClick={() => { setAbaBases('NOVA'); setEdicaoBaseId(null); setBaseNome(''); setBasePesoPronto(''); setBaseIngredientes([]); }} style={{ backgroundColor: '#7c3aed', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}>＋ Adicionar Base</button>
+                    <button type="button" onClick={() => { setAbaBases('NOVA'); setEdicaoBaseId(null); setBaseNome(''); setBasePesoPronto(''); setBaseTempoPreparo(''); setBaseIngredientes([]); }} style={{ backgroundColor: '#7c3aed', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}>＋ Adicionar Base</button>
                   </div>
                   {listaReceitas.length === 0 ? <p style={{ textAlign: 'center', color: '#9ca3af' }}>Nenhuma base cadastrada.</p> : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {listaReceitas.map(rec => (
-                        <div key={rec.id} onClick={async () => {
-                          if (edicaoBaseId) return;
-                          setBaseExpandida(rec);
-                          const { data } = await supabase.from('ingredientes_receita').select('quantidade_usada, produtos_cadastrados(*)').eq('receita_id', rec.id);
-                          if (data) {
-                            setBaseDetalhesExpandidos(data.map(it => {
-                              const p = it.produtos_cadastrados;
-                              let pg = it.quantidade_usada;
-                              if (p.unidade_medida.toUpperCase() === 'UN') pg = it.quantidade_usada * (parseFloat(p.tamanho_embalagem) || 1);
-                              else if (p.unidade_medida.toUpperCase() === 'KG' || p.unidade_medida.toUpperCase() === 'L') pg = it.quantidade_usada * 1000;
-                              return { nome: p.nome, marca: p.marca, quantidade_usada: it.quantidade_usada, peso_calculado_gramas: pg, tamanho_embalagem: p.tamanho_embalagem, unidade_medida: p.unidade_medida, preco_base: p.preco_base || 0 };
-                            }));
-                          }
-                        }} style={{ padding: '14px', border: '1px solid #e5e7eb', borderRadius: '10px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: baseExpandida?.id === rec.id ? '#f5f3ff' : '#f9fafb', borderColor: baseExpandida?.id === rec.id ? '#a78bfa' : '#e5e7eb' }}>
+                        <div key={rec.id} onClick={() => expandirFichaBase(rec)} style={{ padding: '14px', border: '1px solid #e5e7eb', borderRadius: '10px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: baseExpandida?.id === rec.id ? '#f5f3ff' : '#f9fafb', borderColor: baseExpandida?.id === rec.id ? '#a78bfa' : '#e5e7eb' }}>
                           <div>
                             <div style={{ fontWeight: '700', fontSize: '16px', color: '#1f2937' }}>{rec.nome}</div>
                             <small style={{ color: '#6b7280', fontWeight: '500' }}>Rendimento pronto: {rec.peso_final_real_gramas || 0}g</small>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <button type="button" onClick={async (e) => {
-                              e.stopPropagation(); setEdicaoBaseId(rec.id); setBaseNome(rec.nome); setBasePesoPronto(rec.peso_final_real_gramas?.toString() || ''); setBaseExpandida(null);
+                              e.stopPropagation(); setEdicaoBaseId(rec.id); setBaseNome(rec.nome); setBasePesoPronto(rec.peso_final_real_gramas?.toString() || ''); setBaseTempoPreparo(rec.tempo_preparo?.toString() || ''); setBaseExpandida(null);
                               const { data } = await supabase.from('ingredientes_receita').select('quantidade_usada, produtos_cadastrados(*)').eq('receita_id', rec.id);
                               if (data) {
                                 setBaseIngredientes(data.map(it => {
                                   const p = it.produtos_cadastrados;
-                                  let pg = it.quantidade_usada;
-                                  if (p.unidade_medida.toUpperCase() === 'UN') pg = it.quantidade_usada * (parseFloat(p.tamanho_embalagem) || 1);
-                                  else if (p.unidade_medida.toUpperCase() === 'KG' || p.unidade_medida.toUpperCase() === 'L') pg = it.quantidade_usada * 1000;
-                                  return { id_interno: Date.now() + Math.random(), produto_id: p.id, nome: p.nome, marca: p.marca, quantidade_usada: it.quantidade_usada, peso_calculado_gramas: pg, tamanho_embalagem: p.tamanho_embalagem, unidade_medida: p.unidade_medida, preco_base: p.preco_base || 0 };
+                                  return { id_interno: Date.now() + Math.random(), produto_id: p.id, nome: p.nome, marca: p.marca, quantidade_usada: it.quantidade_usada, peso_calculado_gramas: it.quantidade_usada, tamanho_embalagem: p.tamanho_embalagem, unidade_medida: p.unidade_medida, preco_base: p.preco_base || 0 };
                                 }));
                               }
                               setAbaBases('NOVA');
@@ -539,27 +539,36 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                 </section>
               </div>
 
-              {baseExpandida && (
-                <div className="card-app">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6', paddingBottom: '12px', marginBottom: '14px' }}>
-                    <div><h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#7c3aed' }}>{baseExpandida.nome}</h2><small style={{ color: '#6b7280', fontWeight: '600' }}>Rendimento: {baseExpandida.peso_final_real_gramas || 0}g</small></div>
-                    <button type="button" onClick={() => setBaseExpandida(null)} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700' }}>Fechar</button>
+              {baseExpandida && (() => {
+                const tempo = baseExpandida.tempo_preparo || 0;
+                const cTempo = calcularCustoTempoMinutos(tempo);
+                const pPronto = baseExpandida.peso_final_real_gramas || 1;
+                const cInsumos = baseDetalhesExpandidos.reduce((acc, i) => acc + callbackCustoItem(i), 0);
+                const cTotalReal = cInsumos + cTempo;
+
+                return (
+                  <div className="card-app">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6', paddingBottom: '12px', marginBottom: '14px' }}>
+                      <div><h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#7c3aed' }}>{baseExpandida.nome}</h2><small style={{ color: '#6b7280', fontWeight: '600' }}>Rendimento: {pPronto}g</small></div>
+                      <button type="button" onClick={() => setBaseExpandida(null)} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700' }}>Fechar</button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                      {baseDetalhesExpandidos.map((ing, i) => (
+                        <div key={i} style={{ padding: '8px 0', borderBottom: '1px dashed #f3f4f6', display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                          <div><div style={{ fontWeight: '600', color: '#374151' }}>{ing.nome} <small style={{color:'#9ca3af'}}>({ing.marca})</small></div><small style={{ color: '#6b7280' }}>Usa {ing.quantidade_usada}{ing.unidade_medida.toLowerCase()}</small></div>
+                          <span style={{ fontWeight: '700', alignSelf: 'center', color: '#4b5563' }}>R$ {callbackCustoItem(ing).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ padding: '14px', backgroundColor: '#f5f3ff', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⏱️ Mão de Obra ({tempo} min):</span><span style={{ fontWeight: '600' }}>R$ {cTempo.toFixed(2)}</span></div>
+                      <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }}></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '850', color: '#7c3aed', fontSize: '15px' }}><span>📉 CUSTO TOTAL DA BASE:</span><span>R$ {cTotalReal.toFixed(2)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#7c3aed', fontSize: '12px' }}><span>VALOR DA GRAMA (g):</span><span>R$ {(cTotalReal / pPronto).toFixed(4)} /g</span></div>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-                    {baseDetalhesExpandidos.map((ing, i) => (
-                      <div key={i} style={{ padding: '8px 0', borderBottom: '1px dashed #f3f4f6', display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                        <div><div style={{ fontWeight: '600', color: '#374151' }}>{ing.nome} <small style={{color:'#9ca3af'}}>({ing.marca})</small></div><small style={{ color: '#6b7280' }}>Usa {ing.quantidade_usada}{ing.unidade_medida.toLowerCase()} • Custo: R$ {ing.preco_base.toFixed(2)}</small></div>
-                        <span style={{ fontWeight: '700', alignSelf: 'center', color: '#4b5563' }}>R$ {callbackCustoItem(ing).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ padding: '14px', backgroundColor: '#f5f3ff', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⚖️ Peso Crus:</span><span>{baseDetalhesExpandidos.reduce((acc, i) => acc + i.peso_calculado_gramas, 0).toFixed(0)}g</span></div>
-                    <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }}></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '850', color: '#7c3aed', fontSize: '15px' }}><span>📉 CUSTO POR GRAMA:</span><span>R$ {(baseDetalhesExpandidos.reduce((acc, i) => acc + callbackCustoItem(i), 0) / (baseExpandida.peso_final_real_gramas || 1)).toFixed(4)} /g</span></div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           ) : (
             <div className="grid-layout">
@@ -568,7 +577,11 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                   <h3 style={{ marginTop: 0, marginBottom: '14px', fontSize: '16px', fontWeight: '700', color: edicaoBaseId ? '#ea580c' : '#1f2937' }}>{edicaoBaseId ? '✏️ 1. Alterar Massa/Base' : '1. Informações da Nova Massa/Base'}</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <input type="text" value={baseNome} onChange={(e) => setBaseNome(e.target.value)} placeholder="Nome da Base (ex: Massa de Brownie, Geleia)" className="input-padrao" required />
-                    <div><label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#ea580c' }}>PESO FINAL APÓS COZIMENTO (g)</label><input type="number" value={basePesoPronto} onChange={(e) => setBasePesoPronto(e.target.value)} placeholder="Balança após preparo" className="input-padrao" required /></div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div><label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#ea580c' }}>PESO FINAL (g)</label><input type="number" value={basePesoPronto} onChange={(e) => setBasePesoPronto(e.target.value)} placeholder="Balança após preparo" className="input-padrao" required /></div>
+                      <div><label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '700', color: '#7c3aed' }}>TEMPO PREPARO (Minutos)</label><input type="number" value={baseTempoPreparo} onChange={(e) => setBaseTempoPreparo(e.target.value)} placeholder="Ex: 45" className="input-padrao" required /></div>
+                    </div>
                   </div>
                 </section>
                 <section className="card-app">
@@ -587,7 +600,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
               <div>
                 {baseIngredientes.length > 0 ? (
                   <section className="card-app">
-                    <h3 style={{ marginTop: 0, borderBottom: '1px solid #f3f4f6', paddingBottom: '10px' }}>Análise de Quebra Térmica</h3>
+                    <h3 style={{ marginTop: 0, borderBottom: '1px solid #f3f4f6', paddingBottom: '10px' }}>Resumo de Custos e Rendimento</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '14px 0', maxHeight: '180px', overflowY: 'auto' }}>
                       {baseIngredientes.map(it => (
                         <div key={it.id_interno} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px dashed #e2e8f0', fontSize: '14px', alignItems: 'center' }}>
@@ -596,14 +609,20 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                         </div>
                       ))}
                     </div>
-                    <div style={{ padding: '12px', backgroundColor: '#f5f3ff', borderRadius: '8px', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⚖️ Peso Cru Somado:</span><span style={{ fontWeight: '600' }}>{pesoCruSomadoBase.toFixed(0)}g</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>🍳 Peso Real Pronto:</span><span style={{ fontWeight: '600', color: '#ea580c' }}>{pesoRealBaseNum.toFixed(0)}g</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#dc2626', fontWeight: '700', backgroundColor: '#fef2f2', padding: '6px', borderRadius: '4px', margin: '2px 0' }}><span>📉 Evaporação (Quebra):</span><span>{reducaoEvapBase > 0 ? `- ${reducaoEvapBase.toFixed(1)}%` : '0%'}</span></div>
-                      <div style={{ borderTop: '1px solid #ddd', margin: '4px 0' }}></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#7c3aed', fontSize: '15px' }}><span>💲 CUSTO DE 1 GRAMA DESSA BASE:</span><span>R$ {(pesoRealBaseNum > 0 ? custoInsumosBaseCru / pesoRealBaseNum : 0).toFixed(4)} /g</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#16a34a', fontSize: '15px', marginTop: '2px' }}><span>💰 CUSTO DA PANELA:</span><span>R$ {custoInsumosBaseCru.toFixed(2)}</span></div>
-                    </div>
+                    {(() => {
+                      const cTempo = calcularCustoTempoMinutos(baseTempoPreparo);
+                      const pReal = parseFloat(basePesoPronto) || 0;
+                      return (
+                        <div style={{ padding: '12px', backgroundColor: '#f5f3ff', borderRadius: '8px', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>💰 Custo Insumos:</span><span style={{ fontWeight: '600' }}>R$ {custoInsumosBaseCru.toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⏱️ Mão de Obra ({baseTempoPreparo || 0} min):</span><span style={{ fontWeight: '600', color: '#7c3aed' }}>R$ {cTempo.toFixed(2)}</span></div>
+                          
+                          <div style={{ borderTop: '1px solid #ddd', margin: '4px 0' }}></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#16a34a', fontSize: '15px' }}><span>CUSTO TOTAL:</span><span>R$ {(custoInsumosBaseCru + cTempo).toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#7c3aed', fontSize: '13px', marginTop: '2px' }}><span>CUSTO POR GRAMA:</span><span>R$ {(pReal > 0 ? (custoInsumosBaseCru + cTempo) / pReal : 0).toFixed(4)} /g</span></div>
+                        </div>
+                      )
+                    })()}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button type="button" onClick={() => { setAbaBases('LISTA'); setEdicaoBaseId(null); }} style={{ width: '35%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '15px' }}>Cancelar</button>
                       <button type="button" onClick={handleSalvarFichaBase} disabled={salvandoBase} style={{ flex: 1, backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '15px' }}>{salvandoBase ? 'Salvando...' : '🔒 Salvar Base'}</button>
@@ -678,7 +697,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
             <section className="card-app">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #f3f4f6', paddingBottom: '12px' }}>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#16a34a' }}>Produtos no Cardápio de Vendas</h3>
-                <button type="button" onClick={() => { setAbaMontagem('NOVA'); setMontNome(''); setMontItensTemp([]); setEdicaoMontId(null); }} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}>＋ Montar Produto</button>
+                <button type="button" onClick={() => { setAbaMontagem('NOVA'); setMontNome(''); setMontTempoMontagem(''); setMontItensTemp([]); setEdicaoMontId(null); }} style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}>＋ Montar Produto</button>
               </div>
               {listaMontagens.length === 0 ? <div style={{ textAlign: 'center', padding: '30px', color: '#9ca3af' }}>Nenhum produto final montado.</div> : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -691,10 +710,10 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div><div style={{ fontWeight: '800', fontSize: '16px', color: '#1f2937' }}>{mont.nome}</div><small style={{ color: '#6b7280' }}>Clique para ver as peças</small></div>
                         <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                          <div style={{ textAlign: 'right' }}><span style={{ fontSize: '9px', fontWeight: '800', color: '#16a34a', display: 'block' }}>CUSTO DE PRODUÇÃO</span><span style={{ fontWeight: '900', fontSize: '16px', color: '#16a34a' }}>R$ {mont.custo_total.toFixed(2)}</span></div>
+                          <div style={{ textAlign: 'right' }}><span style={{ fontSize: '9px', fontWeight: '800', color: '#16a34a', display: 'block' }}>CUSTO DA PEÇA</span><span style={{ fontWeight: '900', fontSize: '16px', color: '#16a34a' }}>R$ {mont.custo_total.toFixed(2)}</span></div>
                           <button type="button" onClick={async (e) => {
                             e.stopPropagation();
-                            setEdicaoMontId(mont.id); setMontNome(mont.nome); setMontExpandida(null); setCarregando(true);
+                            setEdicaoMontId(mont.id); setMontNome(mont.nome); setMontTempoMontagem(mont.tempo_montagem?.toString() || ''); setMontExpandida(null); setCarregando(true);
                             const { data } = await supabase.from('itens_montagem').select('*').eq('montagem_id', mont.id);
                             if (data) {
                               setMontItensTemp(data.map(it => ({ id_interno: Date.now() + Math.random(), tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, descricaoDetalhe: `${it.quantidade} ${it.tipo === 'EMBALAGEM' ? 'un' : 'g/un'}`, quantidade: it.quantidade, custo_calculado: it.custo_calculado })));
@@ -724,51 +743,14 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
             <div className="grid-layout">
               <section className="card-app">
                 <h3 style={{ marginTop: 0, marginBottom: '14px', fontSize: '16px', fontWeight: '700', color: edicaoMontId ? '#ea580c' : '#16a34a' }}>{edicaoMontId ? '✏️ Alterar Produto Montado' : 'Montar Novo Produto'}</h3>
-                <div style={{ marginBottom: '16px' }}>
-                  <input type="text" value={montNome} onChange={(e) => setMontNome(e.target.value)} placeholder="Nome do Produto Final (Ex: Copo GG)" className="input-padrao" required />
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                  <div><label style={{ fontSize: '11px', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '4px' }}>NOME DO PRODUTO (CARDÁPIO)</label><input type="text" value={montNome} onChange={(e) => setMontNome(e.target.value)} placeholder="Ex: Copo GG" className="input-padrao" required /></div>
+                  <div><label style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', display: 'block', marginBottom: '4px' }}>TEMPO DE FINALIZAÇÃO</label><input type="number" value={montTempoMontagem} onChange={(e) => setMontTempoMontagem(e.target.value)} placeholder="Ex: 5 min" className="input-padrao" required /></div>
                 </div>
 
                 <h4 style={{ margin: '14px 0 10px 0', fontSize: '14px', color: '#4b5563', borderBottom: '1px solid #f3f4f6', paddingBottom: '6px' }}>Adicionar Peças ao Produto</h4>
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  let alvoId = montPecaId;
-                  if (!alvoId) {
-                    if (montTipoPeca === 'BASE' && listaReceitas.length > 0) alvoId = listaReceitas[0].id.toString();
-                    else if (montTipoPeca === 'EMBALAGEM' && listaEmbalagens.length > 0) alvoId = listaEmbalagens[0].id.toString();
-                    else if (montTipoPeca === 'INSUMO' && bancoProdutos.length > 0) alvoId = bancoProdutos[0].id.toString();
-                  }
-
-                  if (!alvoId || !montQtdPeca || parseFloat(montQtdPeca) <= 0) { mostrarNotificacao('Selecione um componente e a quantidade!', 'erro'); return; }
-
-                  const qtdNum = parseFloat(montQtdPeca);
-                  let nomeExibicao = '', custoCalc = 0, detalhe = '';
-
-                  if (montTipoPeca === 'BASE') {
-                    const base = listaReceitas.find(r => r.id === parseInt(alvoId));
-                    if (!base) return;
-                    custoCalc = obterCustoGramaBase(base.id) * qtdNum;
-                    nomeExibicao = `[Massa/Base] ${base.nome}`;
-                    detalhe = `${qtdNum}g usadas`;
-                  } else if (montTipoPeca === 'EMBALAGEM') {
-                    const emb = listaEmbalagens.find(em => em.id === parseInt(alvoId));
-                    if (!emb) return;
-                    custoCalc = (emb.valor_compra / emb.qtd_unidades) * qtdNum;
-                    nomeExibicao = `[Embalagem] ${emb.nome}`;
-                    detalhe = `${qtdNum} unidades`;
-                  } else if (montTipoPeca === 'INSUMO') {
-                    const ins = bancoProdutos.find(p => p.id === parseInt(alvoId));
-                    if (!ins) return;
-                    let pesoG = qtdNum;
-                    if (ins.unidade_medida.toUpperCase() === 'UN') pesoG = qtdNum * (parseFloat(ins.tamanho_embalagem) || 1);
-                    else if (ins.unidade_medida.toUpperCase() === 'KG' || ins.unidade_medida.toUpperCase() === 'L') pesoG = qtdNum * 1000;
-                    custoCalc = callbackCustoItem({ preco_base: ins.preco_base, unidade_medida: ins.unidade_medida, tamanho_embalagem: ins.tamanho_embalagem, quantidade_usada: qtdNum, peso_calculado_gramas: pesoG });
-                    nomeExibicao = `[Topping] ${ins.nome}`;
-                    detalhe = `${qtdNum} ${ins.unidade_medida.toLowerCase()}`;
-                  }
-
-                  setMontItensTemp([...montItensTemp, { id_interno: Date.now() + Math.random(), tipo: montTipoPeca, item_id: parseInt(alvoId), nome_exibicao, descricaoDetalhe: detalhe, quantidade: qtdNum, custo_calculado: custoCalc }]);
-                  setMontQtdPeca(''); mostrarNotificacao('Componente inserido no pote!');
-                }} style={{ display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <form onSubmit={adicionarPecaNaMontagem} style={{ display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <div>
                     <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>TIPO DE PEÇA</label>
                     <select value={montTipoPeca} onChange={(e) => handleMudarTipoPecaMontagem(e.target.value)} className="select-padrao">
@@ -792,7 +774,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
               </section>
 
               <section className="card-app">
-                <h3 style={{ marginTop: 0, borderBottom: '1px solid #f3f4f6', paddingBottom: '10px', fontSize: '15px' }}>Itens no Pote</h3>
+                <h3 style={{ marginTop: 0, borderBottom: '1px solid #f3f4f6', paddingBottom: '10px', fontSize: '15px' }}>Resumo de Custos do Pote</h3>
                 {montItensTemp.length === 0 ? <p style={{ fontSize: '13px', color: '#9ca3af' }}>Vazio.</p> : (
                   <>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
@@ -803,27 +785,24 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                         </div>
                       ))}
                     </div>
-                    <div style={{ padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '8px', textAlign: 'right', fontWeight: '800', color: '#16a34a', fontSize: '16px' }}>CUSTO TOTAL: R$ {montItensTemp.reduce((acc, i) => acc + i.custo_calculado, 0).toFixed(2)}</div>
+                    {(() => {
+                      const cPecas = montItensTemp.reduce((acc, i) => acc + i.custo_calculado, 0);
+                      const tMont = parseInt(montTempoMontagem) || 0;
+                      const cTempoM = calcularCustoTempoMinutos(tMont);
+                      return (
+                        <div style={{ padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563', marginBottom: '6px' }}><span>Custo das Peças:</span><span>R$ {cPecas.toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563', marginBottom: '6px' }}><span>Mão de Obra ({tMont} min):</span><span>R$ {cTempoM.toFixed(2)}</span></div>
+                          <div style={{ borderTop: '1px solid #bbf7d0', margin: '4px 0 8px 0' }}></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#16a34a', fontSize: '16px' }}><span>CUSTO TOTAL DO PRODUTO:</span><span>R$ {(cPecas + cTempoM).toFixed(2)}</span></div>
+                        </div>
+                      );
+                    })()}
                   </>
                 )}
                 <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                  <button type="button" onClick={() => { setAbaMontagem('LISTA'); setEdicaoMontId(null); setMontNome(''); setMontItensTemp([]); }} style={{ width: '35%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Cancelar</button>
-                  <button type="button" onClick={async () => {
-                    if (!montNome || montItensTemp.length === 0) { mostrarNotificacao('Informe o nome e os itens!', 'erro'); return; }
-                    setSalvandoMontagem(true);
-                    const cTotal = montItensTemp.reduce((acc, i) => acc + i.custo_calculado, 0);
-                    if (edicaoMontId) {
-                      await supabase.from('cardapio_montagens').update({ nome: montNome, custo_total: cTotal }).eq('id', edicaoMontId);
-                      await supabase.from('itens_montagem').delete().eq('montagem_id', edicaoMontId);
-                      await supabase.from('itens_montagem').insert(montItensTemp.map(it => ({ montagem_id: edicaoMontId, tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, quantidade: it.quantidade, custo_calculado: it.custo_calculado })));
-                      mostrarNotificacao('Montagem alterada! ✏️');
-                    } else {
-                      const { data: nMont } = await supabase.from('cardapio_montagens').insert([{ nome: montNome, preco_venda: 0, custo_total: cTotal }]).select();
-                      await supabase.from('itens_montagem').insert(montItensTemp.map(it => ({ montagem_id: nMont[0].id, tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, quantidade: it.quantidade, custo_calculado: it.custo_calculado })));
-                      mostrarNotificacao('Produto montado salvo! 💎');
-                    }
-                    setMontNome(''); setMontItensTemp([]); setEdicaoMontId(null); setAbaMontagem('LISTA'); buscarDadosIniciais(); setSalvandoMontagem(false);
-                  }} disabled={salvandoMontagem} style={{ flex: 1, backgroundColor: edicaoMontId ? '#ea580c' : '#16a34a', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>{salvandoMontagem ? 'Salvando...' : edicaoMontId ? '💾 Salvar Alterações' : '💾 Finalizar Montagem'}</button>
+                  <button type="button" onClick={() => { setAbaMontagem('LISTA'); setEdicaoMontId(null); setMontNome(''); setMontTempoMontagem(''); setMontItensTemp([]); }} style={{ width: '35%', backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Cancelar</button>
+                  <button type="button" onClick={handleSalvarProdutoMontado} disabled={salvandoMontagem} style={{ flex: 1, backgroundColor: edicaoMontId ? '#ea580c' : '#16a34a', color: '#fff', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>{salvandoMontagem ? 'Salvando...' : edicaoMontId ? '💾 Salvar Alterações' : '💾 Finalizar Montagem'}</button>
                 </div>
               </section>
             </div>
