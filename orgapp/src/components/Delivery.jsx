@@ -27,7 +27,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   const [edicaoBaseId, setEdicaoBaseId] = useState(null);
   const [baseNome, setBaseNome] = useState('');
   const [basePesoPronto, setBasePesoPronto] = useState('');
-  const [baseTempoPreparo, setBaseTempoPreparo] = useState(''); // <--- NOVO
+  const [baseTempoPreparo, setBaseTempoPreparo] = useState('');
   const [baseIngredientes, setBaseIngredientes] = useState([]);
   const [baseInsumoSelecionadoId, setBaseInsumoSelecionadoId] = useState('');
   const [baseQtdUsada, setBaseQtdUsada] = useState('');
@@ -52,7 +52,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   const [abaMontagem, setAbaMontagem] = useState('LISTA');
   const [edicaoMontId, setEdicaoMontId] = useState(null); 
   const [montNome, setMontNome] = useState('');
-  const [montTempoMontagem, setMontTempoMontagem] = useState(''); // <--- NOVO
+  const [montTempoMontagem, setMontTempoMontagem] = useState(''); 
   const [montItensTemp, setMontItensTemp] = useState([]);
   const [montTipoPeca, setMontTipoPeca] = useState('BASE');
   const [montPecaId, setMontPecaId] = useState('');
@@ -171,7 +171,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
 
   // Calcula o custo do tempo baseado nas despesas fixas
   const despesasFixasReais = itensCusto.filter(i => !i.is_percentual && i.categoria !== 'Canais de Venda (Plataformas)');
-  const totalCustosMensaisFixos = despesasFixasReais.reduce((acc, i) => acc + parseFloat(i.valor), 0);
+  const totalCustosMensaisFixos = despesasFixasReais.reduce((acc, i) => acc + parseFloat(i.valor || 0), 0);
   
   const calcularCustoTempoMinutos = (minutos) => {
     const min = parseFloat(minutos) || 0;
@@ -203,7 +203,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   const valorDaHoraCalc = custosGlobais.horas_mes > 0 ? (totalCustosMensaisFixos / custosGlobais.horas_mes) : 0;
 
   const taxasUniversais = itensCusto.filter(i => i.is_percentual && i.categoria !== 'Canais de Venda (Plataformas)');
-  const totalTaxasPercentuaisGerais = taxasUniversais.reduce((acc, i) => acc + parseFloat(i.valor), 0);
+  const totalTaxasPercentuaisGerais = taxasUniversais.reduce((acc, i) => acc + parseFloat(i.valor || 0), 0);
   const listaCanaisDeVenda = itensCusto.filter(i => i.categoria === 'Canais de Venda (Plataformas)');
 
   const categoriasIniciais = ['Despesas Administrativas', 'Mão de Obra', 'Despesas Comerciais', 'Custos de Venda (Taxas)'];
@@ -252,21 +252,27 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
     const pr = parseFloat(basePesoPronto);
     const minPreparo = parseInt(baseTempoPreparo) || 0;
 
-    if (edicaoBaseId) {
-      await supabase.from('receitas').update({ nome: baseNome, peso_final_real_gramas: pr, peso_porcao_gramas: pr, tempo_preparo: minPreparo }).eq('id', edicaoBaseId);
-      await supabase.from('ingredientes_receita').delete().eq('receita_id', edicaoBaseId);
-      await supabase.from('ingredientes_receita').insert(baseIngredientes.map(i => ({ receita_id: edicaoBaseId, produto_id: i.produto_id, quantidade_usada: i.quantidade_usada })));
-      mostrarNotificacao('Base atualizada com sucesso!');
-    } else {
-      const { data: novaRec } = await supabase.from('receitas').insert([{ nome: baseNome, rendimento_unidades: 1, peso_porcao_gramas: pr, peso_final_real_gramas: pr, tempo_preparo: minPreparo }]).select();
-      await supabase.from('ingredientes_receita').insert(baseIngredientes.map(i => ({ receita_id: novaRec[0].id, produto_id: i.produto_id, quantidade_usada: i.quantidade_usada })));
-      mostrarNotificacao('Nova base catalogada!');
-    }
+    try {
+      if (edicaoBaseId) {
+        await supabase.from('receitas').update({ nome: baseNome, peso_final_real_gramas: pr, peso_porcao_gramas: pr, tempo_preparo: minPreparo }).eq('id', edicaoBaseId);
+        await supabase.from('ingredientes_receita').delete().eq('receita_id', edicaoBaseId);
+        await supabase.from('ingredientes_receita').insert(baseIngredientes.map(i => ({ receita_id: edicaoBaseId, produto_id: i.produto_id, quantidade_usada: i.quantidade_usada })));
+        mostrarNotificacao('Base atualizada com sucesso!');
+      } else {
+        const { data: novaRec } = await supabase.from('receitas').insert([{ nome: baseNome, rendimento_unidades: 1, peso_porcao_gramas: pr, peso_final_real_gramas: pr, tempo_preparo: minPreparo }]).select();
+        await supabase.from('ingredientes_receita').insert(baseIngredientes.map(i => ({ receita_id: novaRec[0].id, produto_id: i.produto_id, quantidade_usada: i.quantidade_usada })));
+        mostrarNotificacao('Nova base catalogada!');
+      }
 
-    setBaseNome(''); setBasePesoPronto(''); setBaseTempoPreparo(''); setBaseIngredientes([]); setEdicaoBaseId(null);
-    setAbaBases('LISTA');
-    buscarDadosIniciais();
-    setSalvandoBase(false);
+      setBaseNome(''); setBasePesoPronto(''); setBaseTempoPreparo(''); setBaseIngredientes([]); setEdicaoBaseId(null);
+      setAbaBases('LISTA');
+      buscarDadosIniciais();
+    } catch (err) {
+      console.error(err);
+      mostrarNotificacao('Erro ao salvar ficha técnica.', 'erro');
+    } finally {
+      setSalvandoBase(false);
+    }
   };
 
   const expandirFichaBase = async (rec) => {
@@ -334,7 +340,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
           nome_exibicao: it.nome_exibicao,
           descricaoDetalhe: txtDetalhe,
           quantidade: it.quantidade,
-          custo_calculado: it.custo_calculado
+          custo_calculado: Number(it.custo_calculado || 0)
         };
       }));
     }
@@ -375,7 +381,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
       if (!ins) return;
       custoCalc = callbackCustoItem({ preco_base: ins.preco_base, unidade_medida: ins.unidade_medida, tamanho_embalagem: ins.tamanho_embalagem, quantidade_usada: qtdNum, peso_calculado_gramas: qtdNum });
       nomeExibicao = `[Topping] ${ins.nome}`;
-      detalhe = `${qtdNum} ${ins.unidade_medida.toLowerCase()}`;
+      detalhe = `${qtdNum} ${(ins.unidade_medida || '').toLowerCase()}`;
     }
 
     setMontItensTemp([...montItensTemp, {
@@ -385,43 +391,80 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
       nome_exibicao: nomeExibicao,
       descricaoDetalhe: detalhe,
       quantidade: qtdNum,
-      custo_calculado: custoCalc
+      custo_calculado: Number(custoCalc || 0)
     }]);
 
     setMontQtdPeca('');
     mostrarNotificacao('Componente inserido no pote!');
   };
 
-  const handleSalvarProdutoMontado = async () => {
+  const handleSalvarProdutoMontado = async (e) => {
+    if (e) e.preventDefault();
     if (!montNome) { mostrarNotificacao('Informe o nome de venda do produto!', 'erro'); return; }
     if (montItensTemp.length === 0) { mostrarNotificacao('Adicione componentes à montagem!', 'erro'); return; }
 
     setSalvandoMontagem(true);
     
-    // Soma custo das peças com o custo do tempo preenchido
-    const custoPecas = montItensTemp.reduce((acc, i) => acc + i.custo_calculado, 0);
-    const minMont = parseInt(montTempoMontagem) || 0;
-    const custoTempoMontagem = calcularCustoTempoMinutos(minMont);
-    const custoTotal = custoPecas + custoTempoMontagem;
+    try {
+      const custoPecas = montItensTemp.reduce((acc, i) => acc + Number(i.custo_calculado || 0), 0);
+      const minMont = parseInt(montTempoMontagem) || 0;
+      const custoTempoMontagem = calcularCustoTempoMinutos(minMont);
+      const custoTotal = Number(custoPecas) + Number(custoTempoMontagem);
 
-    if (edicaoMontId) {
-      await supabase.from('cardapio_montagens').update({ nome: montNome, custo_total: custoTotal, tempo_montagem: minMont }).eq('id', edicaoMontId);
-      await supabase.from('itens_montagem').delete().eq('montagem_id', edicaoMontId);
-      const payloadItens = montItensTemp.map(it => ({ montagem_id: edicaoMontId, tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, quantidade: it.quantidade, custo_calculado: it.custo_calculado }));
-      await supabase.from('itens_montagem').insert(payloadItens);
-      mostrarNotificacao('Montagem alterada com sucesso! ✏️');
-    } else {
-      const { data: novaMont, error } = await supabase.from('cardapio_montagens').insert([{ nome: montNome, preco_venda: 0, custo_total: custoTotal, tempo_montagem: minMont }]).select();
-      if (error) { mostrarNotificacao('Erro: ' + error.message, 'erro'); setSalvandoMontagem(false); return; }
-      const payloadItens = montItensTemp.map(it => ({ montagem_id: novaMont[0].id, tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, quantidade: it.quantidade, custo_calculado: it.custo_calculado }));
-      await supabase.from('itens_montagem').insert(payloadItens);
-      mostrarNotificacao('Produto montado salvo com sucesso! 💎');
+      let idMontagemAtual = edicaoMontId;
+
+      if (edicaoMontId) {
+        // Fluxo de Atualização (UPDATE)
+        const { error: erroUpdate } = await supabase
+          .from('cardapio_montagens')
+          .update({ nome: montNome, custo_total: custoTotal, tempo_montagem: minMont })
+          .eq('id', edicaoMontId);
+        
+        if (erroUpdate) throw erroUpdate;
+
+        await supabase.from('itens_montagem').delete().eq('montagem_id', edicaoMontId);
+        mostrarNotificacao('Montagem alterada com sucesso! ✏️');
+      } else {
+        // Fluxo de Inserção (INSERT)
+        const { data: novaMont, error: erroInsert } = await supabase
+          .from('cardapio_montagens')
+          // Se sua tabela exige preco_venda, ele é enviado aqui. Senão, vai gerar erro (que agora é capturado).
+          .insert([{ nome: montNome, preco_venda: 0, custo_total: custoTotal, tempo_montagem: minMont }])
+          .select();
+        
+        if (erroInsert) throw erroInsert;
+        if (!novaMont || novaMont.length === 0) throw new Error('Não foi possível identificar o ID gerado pelo banco.');
+        
+        idMontagemAtual = novaMont[0].id;
+        mostrarNotificacao('Produto montado salvo com sucesso! 💎');
+      }
+
+      // Salva as peças do produto
+      if (idMontagemAtual) {
+        const payloadItens = montItensTemp.map(it => ({ 
+          montagem_id: idMontagemAtual, 
+          tipo: it.tipo, 
+          item_id: it.item_id, 
+          nome_exibicao: it.nome_exibicao, 
+          quantidade: it.quantidade, 
+          custo_calculado: Number(it.custo_calculado || 0) 
+        }));
+        
+        const { error: erroItens } = await supabase.from('itens_montagem').insert(payloadItens);
+        if (erroItens) throw erroItens;
+      }
+
+      // Limpeza de sucesso
+      setMontNome(''); setMontTempoMontagem(''); setMontItensTemp([]); setEdicaoMontId(null);
+      setAbaMontagem('LISTA');
+      buscarDadosIniciais();
+
+    } catch (error) {
+      console.error("Erro interno ao montar produto:", error);
+      mostrarNotificacao('Erro: ' + (error.message || 'Falha ao conectar com banco.'), 'erro');
+    } finally {
+      setSalvandoMontagem(false);
     }
-
-    setMontNome(''); setMontTempoMontagem(''); setMontItensTemp([]); setEdicaoMontId(null);
-    setAbaMontagem('LISTA');
-    buscarDadosIniciais();
-    setSalvandoMontagem(false);
   };
 
   const expandirProdutoMontado = async (mont) => {
@@ -476,7 +519,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
   };
 
   // Auxiliares visuais para as quebras térmicas de Bases
-  const custoInsumosBaseCru = baseIngredientes.reduce((acc, i) => acc + callbackCustoItem(i), 0);
+  const custoInsumosBaseCru = baseIngredientes.reduce((acc, i) => acc + Number(callbackCustoItem(i) || 0), 0);
   
   return (
     <div>
@@ -543,7 +586,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                 const tempo = baseExpandida.tempo_preparo || 0;
                 const cTempo = calcularCustoTempoMinutos(tempo);
                 const pPronto = baseExpandida.peso_final_real_gramas || 1;
-                const cInsumos = baseDetalhesExpandidos.reduce((acc, i) => acc + callbackCustoItem(i), 0);
+                const cInsumos = baseDetalhesExpandidos.reduce((acc, i) => acc + Number(callbackCustoItem(i) || 0), 0);
                 const cTotalReal = cInsumos + cTempo;
 
                 return (
@@ -555,16 +598,16 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                       {baseDetalhesExpandidos.map((ing, i) => (
                         <div key={i} style={{ padding: '8px 0', borderBottom: '1px dashed #f3f4f6', display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                          <div><div style={{ fontWeight: '600', color: '#374151' }}>{ing.nome} <small style={{color:'#9ca3af'}}>({ing.marca})</small></div><small style={{ color: '#6b7280' }}>Usa {ing.quantidade_usada}{ing.unidade_medida.toLowerCase()}</small></div>
-                          <span style={{ fontWeight: '700', alignSelf: 'center', color: '#4b5563' }}>R$ {callbackCustoItem(ing).toFixed(2)}</span>
+                          <div><div style={{ fontWeight: '600', color: '#374151' }}>{ing.nome} <small style={{color:'#9ca3af'}}>({ing.marca})</small></div><small style={{ color: '#6b7280' }}>Usa {ing.quantidade_usada}{(ing.unidade_medida || '').toLowerCase()}</small></div>
+                          <span style={{ fontWeight: '700', alignSelf: 'center', color: '#4b5563' }}>R$ {Number(callbackCustoItem(ing) || 0).toFixed(2)}</span>
                         </div>
                       ))}
                     </div>
                     <div style={{ padding: '14px', backgroundColor: '#f5f3ff', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⏱️ Mão de Obra ({tempo} min):</span><span style={{ fontWeight: '600' }}>R$ {cTempo.toFixed(2)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⏱️ Mão de Obra ({tempo} min):</span><span style={{ fontWeight: '600' }}>R$ {Number(cTempo || 0).toFixed(2)}</span></div>
                       <div style={{ borderTop: '1px dashed #ccc', margin: '4px 0' }}></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '850', color: '#7c3aed', fontSize: '15px' }}><span>📉 CUSTO TOTAL DA BASE:</span><span>R$ {cTotalReal.toFixed(2)}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#7c3aed', fontSize: '12px' }}><span>VALOR DA GRAMA (g):</span><span>R$ {(cTotalReal / pPronto).toFixed(4)} /g</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '850', color: '#7c3aed', fontSize: '15px' }}><span>📉 CUSTO TOTAL DA BASE:</span><span>R$ {Number(cTotalReal || 0).toFixed(2)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#7c3aed', fontSize: '12px' }}><span>VALOR DA GRAMA (g):</span><span>R$ {Number((cTotalReal / pPronto) || 0).toFixed(4)} /g</span></div>
                     </div>
                   </div>
                 );
@@ -604,8 +647,8 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '14px 0', maxHeight: '180px', overflowY: 'auto' }}>
                       {baseIngredientes.map(it => (
                         <div key={it.id_interno} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px dashed #e2e8f0', fontSize: '14px', alignItems: 'center' }}>
-                          <span><strong>{it.nome}</strong> <small style={{color: '#6b7280'}}>({it.quantidade_usada}{it.unidade_medida.toLowerCase()})</small></span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ fontWeight: '600' }}>R$ {callbackCustoItem(it).toFixed(2)}</span><button type="button" onClick={() => setBaseIngredientes(baseIngredientes.filter(x => x.id_interno !== it.id_interno))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>🗑️</button></div>
+                          <span><strong>{it.nome}</strong> <small style={{color: '#6b7280'}}>({it.quantidade_usada}{(it.unidade_medida || '').toLowerCase()})</small></span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ fontWeight: '600' }}>R$ {Number(callbackCustoItem(it) || 0).toFixed(2)}</span><button type="button" onClick={() => setBaseIngredientes(baseIngredientes.filter(x => x.id_interno !== it.id_interno))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>🗑️</button></div>
                         </div>
                       ))}
                     </div>
@@ -614,12 +657,12 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                       const pReal = parseFloat(basePesoPronto) || 0;
                       return (
                         <div style={{ padding: '12px', backgroundColor: '#f5f3ff', borderRadius: '8px', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>💰 Custo Insumos:</span><span style={{ fontWeight: '600' }}>R$ {custoInsumosBaseCru.toFixed(2)}</span></div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⏱️ Mão de Obra ({baseTempoPreparo || 0} min):</span><span style={{ fontWeight: '600', color: '#7c3aed' }}>R$ {cTempo.toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>💰 Custo Insumos:</span><span style={{ fontWeight: '600' }}>R$ {Number(custoInsumosBaseCru || 0).toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563' }}><span>⏱️ Mão de Obra ({baseTempoPreparo || 0} min):</span><span style={{ fontWeight: '600', color: '#7c3aed' }}>R$ {Number(cTempo || 0).toFixed(2)}</span></div>
                           
                           <div style={{ borderTop: '1px solid #ddd', margin: '4px 0' }}></div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#16a34a', fontSize: '15px' }}><span>CUSTO TOTAL:</span><span>R$ {(custoInsumosBaseCru + cTempo).toFixed(2)}</span></div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#7c3aed', fontSize: '13px', marginTop: '2px' }}><span>CUSTO POR GRAMA:</span><span>R$ {(pReal > 0 ? (custoInsumosBaseCru + cTempo) / pReal : 0).toFixed(4)} /g</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#16a34a', fontSize: '15px' }}><span>CUSTO TOTAL:</span><span>R$ {Number((custoInsumosBaseCru + cTempo) || 0).toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#7c3aed', fontSize: '13px', marginTop: '2px' }}><span>CUSTO POR GRAMA:</span><span>R$ {pReal > 0 ? Number(((custoInsumosBaseCru + cTempo) / pReal) || 0).toFixed(4) : '0.0000'} /g</span></div>
                         </div>
                       )
                     })()}
@@ -648,15 +691,15 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
             {listaEmbalagens.length === 0 ? <div style={{ textAlign: 'center', padding: '40px 20px', color: '#9ca3af' }}><span style={{ fontSize: '32px' }}>📦</span><p style={{ margin: '8px 0 0 0', fontSize: '14px' }}>Nenhuma embalagem cadastrada.</p></div> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {listaEmbalagens.map(emb => {
-                  const custoUn = emb.qtd_unidades > 0 ? emb.valor_compra / emb.qtd_unidades : 0;
+                  const custoUn = emb.qtd_unidades > 0 ? Number(emb.valor_compra || 0) / Number(emb.qtd_unidades) : 0;
                   return (
                     <div key={emb.id} style={{ padding: '14px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ fontWeight: '700', fontSize: '16px', color: '#1f2937' }}>{emb.nome} <small style={{color: '#6b7280', fontWeight: '500'}}>({emb.marca || 'Sem Marca'})</small></div>
-                        <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '3px' }}>Pacote com <strong>{emb.qtd_unidades} un</strong> pago <strong>R$ {emb.valor_compra.toFixed(2)}</strong></div>
+                        <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '3px' }}>Pacote com <strong>{emb.qtd_unidades} un</strong> pago <strong>R$ {Number(emb.valor_compra || 0).toFixed(2)}</strong></div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ textAlign: 'right', backgroundColor: '#fff7ed', padding: '6px 12px', borderRadius: '6px', border: '1px solid #fed7aa' }}><small style={{ fontSize: '9px', color: '#9a3412', display: 'block', fontWeight: '800' }}>CUSTO UNITÁRIO</small><span style={{ fontWeight: '850', color: '#ea580c', fontSize: '15px' }}>R$ {custoUn.toFixed(2)}</span></div>
+                        <div style={{ textAlign: 'right', backgroundColor: '#fff7ed', padding: '6px 12px', borderRadius: '6px', border: '1px solid #fed7aa' }}><small style={{ fontSize: '9px', color: '#9a3412', display: 'block', fontWeight: '800' }}>CUSTO UNITÁRIO</small><span style={{ fontWeight: '850', color: '#ea580c', fontSize: '15px' }}>R$ {Number(custoUn || 0).toFixed(2)}</span></div>
                         <button type="button" onClick={() => { setEdicaoEmbId(emb.id); setEmbNome(emb.nome); setEmbMarca(emb.marca || ''); setEmbQtd(emb.qtd_unidades.toString()); setEmbValor(emb.valor_compra.toString()); setModalEmbAberto(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>✏️</button>
                         <button type="button" onClick={() => setModalExclusao({ aberto: true, tipo: 'EMBALAGEM', item: emb })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>🗑️</button>
                       </div>
@@ -710,13 +753,13 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div><div style={{ fontWeight: '800', fontSize: '16px', color: '#1f2937' }}>{mont.nome}</div><small style={{ color: '#6b7280' }}>Clique para ver as peças</small></div>
                         <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                          <div style={{ textAlign: 'right' }}><span style={{ fontSize: '9px', fontWeight: '800', color: '#16a34a', display: 'block' }}>CUSTO DA PEÇA</span><span style={{ fontWeight: '900', fontSize: '16px', color: '#16a34a' }}>R$ {mont.custo_total.toFixed(2)}</span></div>
+                          <div style={{ textAlign: 'right' }}><span style={{ fontSize: '9px', fontWeight: '800', color: '#16a34a', display: 'block' }}>CUSTO DA PEÇA</span><span style={{ fontWeight: '900', fontSize: '16px', color: '#16a34a' }}>R$ {Number(mont.custo_total || 0).toFixed(2)}</span></div>
                           <button type="button" onClick={async (e) => {
                             e.stopPropagation();
                             setEdicaoMontId(mont.id); setMontNome(mont.nome); setMontTempoMontagem(mont.tempo_montagem?.toString() || ''); setMontExpandida(null); setCarregando(true);
                             const { data } = await supabase.from('itens_montagem').select('*').eq('montagem_id', mont.id);
                             if (data) {
-                              setMontItensTemp(data.map(it => ({ id_interno: Date.now() + Math.random(), tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, descricaoDetalhe: `${it.quantidade} ${it.tipo === 'EMBALAGEM' ? 'un' : 'g/un'}`, quantidade: it.quantidade, custo_calculado: it.custo_calculado })));
+                              setMontItensTemp(data.map(it => ({ id_interno: Date.now() + Math.random(), tipo: it.tipo, item_id: it.item_id, nome_exibicao: it.nome_exibicao, descricaoDetalhe: `${it.quantidade} ${it.tipo === 'EMBALAGEM' ? 'un' : 'g/un'}`, quantidade: it.quantidade, custo_calculado: Number(it.custo_calculado || 0) })));
                             }
                             setCarregando(false); setAbaMontagem('NOVA');
                           }} style={{ background: 'none', border: 'none', fontSize: '15px', cursor: 'pointer' }} title="Editar Peças">✏️</button>
@@ -729,7 +772,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                           {montDetalhesExpandidos.map(det => (
                             <div key={det.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px' }}>
                               <span>{det.nome_exibicao} <small style={{color:'#9ca3af'}}>({det.quantidade})</small></span>
-                              <span style={{ fontWeight: '600' }}>R$ {det.custo_calculado.toFixed(2)}</span>
+                              <span style={{ fontWeight: '600' }}>R$ {Number(det.custo_calculado || 0).toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
@@ -763,7 +806,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                     <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>SELECIONE O ITEM CORRESPONDENTE</label>
                     <select value={montPecaId} onChange={(e) => setMontPecaId(e.target.value)} className="select-padrao" required>
                       <option value="">-- Selecione abaixo --</option>
-                      {montTipoPeca === 'BASE' && listaReceitas.map(r => <option key={r.id} value={r.id}>{r.nome} (Ref: R$ {obterCustoGramaBase(r.id).toFixed(3)}/g)</option>)}
+                      {montTipoPeca === 'BASE' && listaReceitas.map(r => <option key={r.id} value={r.id}>{r.nome} (Ref: R$ {Number(obterCustoGramaBase(r.id) || 0).toFixed(3)}/g)</option>)}
                       {montTipoPeca === 'EMBALAGEM' && listaEmbalagens.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
                       {montTipoPeca === 'INSUMO' && bancoProdutos.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
                     </select>
@@ -781,20 +824,20 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                       {montItensTemp.map(it => (
                         <div key={it.id_interno} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', backgroundColor: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '13px' }}>
                           <div><div style={{ fontWeight: '700', color: it.tipo === 'BASE' ? '#7c3aed' : it.tipo === 'EMBALAGEM' ? '#ea580c' : '#2563eb' }}>{it.nome_exibicao}</div><small style={{ color: '#6b7280' }}>Uso: {it.descricaoDetalhe}</small></div>
-                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}><span style={{ fontWeight: '700' }}>R$ {it.custo_calculado.toFixed(2)}</span><button type="button" onClick={() => setMontItensTemp(montItensTemp.filter(x => x.id_interno !== it.id_interno))} style={{ background:'none', border:'none', cursor:'pointer' }}>🗑️</button></div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}><span style={{ fontWeight: '700' }}>R$ {Number(it.custo_calculado || 0).toFixed(2)}</span><button type="button" onClick={() => setMontItensTemp(montItensTemp.filter(x => x.id_interno !== it.id_interno))} style={{ background:'none', border:'none', cursor:'pointer' }}>🗑️</button></div>
                         </div>
                       ))}
                     </div>
                     {(() => {
-                      const cPecas = montItensTemp.reduce((acc, i) => acc + i.custo_calculado, 0);
+                      const cPecas = montItensTemp.reduce((acc, i) => acc + Number(i.custo_calculado || 0), 0);
                       const tMont = parseInt(montTempoMontagem) || 0;
                       const cTempoM = calcularCustoTempoMinutos(tMont);
                       return (
                         <div style={{ padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563', marginBottom: '6px' }}><span>Custo das Peças:</span><span>R$ {cPecas.toFixed(2)}</span></div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563', marginBottom: '6px' }}><span>Mão de Obra ({tMont} min):</span><span>R$ {cTempoM.toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563', marginBottom: '6px' }}><span>Custo das Peças:</span><span>R$ {Number(cPecas || 0).toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4b5563', marginBottom: '6px' }}><span>Mão de Obra ({tMont} min):</span><span>R$ {Number(cTempoM || 0).toFixed(2)}</span></div>
                           <div style={{ borderTop: '1px solid #bbf7d0', margin: '4px 0 8px 0' }}></div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#16a34a', fontSize: '16px' }}><span>CUSTO TOTAL DO PRODUTO:</span><span>R$ {(cPecas + cTempoM).toFixed(2)}</span></div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#16a34a', fontSize: '16px' }}><span>CUSTO TOTAL DO PRODUTO:</span><span>R$ {Number((cPecas + cTempoM) || 0).toFixed(2)}</span></div>
                         </div>
                       );
                     })()}
@@ -832,13 +875,15 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                 const percGerais = totalTaxasPercentuaisGerais / 100;
                 const percLuc = (parseFloat(lucroInput) || 0) / 100;
 
+                const custoTotalDb = Number(mont.custo_total || 0);
+
                 return (
                   <div key={mont.id} className="card-app" style={{ border: '2px solid #0284c7', backgroundColor: '#f8fafc', padding: '20px' }}>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '16px' }}>
                       <div>
                         <h3 style={{ margin: 0, color: '#0f172a', fontSize: '19px', fontWeight: '900' }}>{mont.nome}</h3>
-                        <small style={{ color: '#64748b', fontWeight: '600' }}>Custo Real de Matéria-Prima: <strong style={{color:'#0f172a'}}>R$ {mont.custo_total.toFixed(2)}</strong></small>
+                        <small style={{ color: '#64748b', fontWeight: '600' }}>Custo Real de Produção (Peças + Tempo): <strong style={{color:'#0f172a'}}>R$ {custoTotalDb.toFixed(2)}</strong></small>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#e0f2fe', padding: '6px 12px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
@@ -859,7 +904,8 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                         const percCanal = parseFloat(canal.valor) / 100;
                         const somaPerc = percFatur + percGerais + percLuc + percCanal;
                         const denom = 1 - somaPerc;
-                        const precoSug = denom > 0 ? mont.custo_total / denom : 0;
+                        
+                        const precoSug = denom > 0 ? custoTotalDb / denom : 0;
                         const invalido = denom <= 0;
 
                         const key = `${mont.id}_${canal.id}`;
@@ -870,7 +916,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                         const deducaoFaturReais = precoBaseCalculo * percFatur;
                         const deducaoGeraisReais = precoBaseCalculo * percGerais;
                         const deducaoCanalReais = precoBaseCalculo * percCanal;
-                        const lucroRealReais = precoBaseCalculo - mont.custo_total - deducaoFaturReais - deducaoGeraisReais - deducaoCanalReais;
+                        const lucroRealReais = precoBaseCalculo - custoTotalDb - deducaoFaturReais - deducaoGeraisReais - deducaoCanalReais;
                         const lucroRealPerc = precoBaseCalculo > 0 ? (lucroRealReais / precoBaseCalculo) * 100 : 0;
 
                         return (
@@ -887,7 +933,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                                 <>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '4px 0' }}>
                                     <small style={{ color: '#64748b', fontSize: '10px', fontWeight: '800' }}>SUGERIDO:</small>
-                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#94a3b8', textDecoration: usaPrecoManual ? 'line-through' : 'none' }}>R$ {precoSug.toFixed(2)}</span>
+                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#94a3b8', textDecoration: usaPrecoManual ? 'line-through' : 'none' }}>R$ {Number(precoSug || 0).toFixed(2)}</span>
                                   </div>
                                   
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '6px 0 10px 0', backgroundColor: '#f0f9ff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #bae6fd' }}>
@@ -899,16 +945,16 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                                         step="0.01" 
                                         value={precosSimulador[key] || ''} 
                                         onChange={(e) => setPrecosSimulador({...precosSimulador, [key]: e.target.value})} 
-                                        placeholder={precoSug.toFixed(2)}
+                                        placeholder={Number(precoSug || 0).toFixed(2)}
                                         style={{ width: '65px', fontWeight: '900', color: '#0369a1', backgroundColor: '#fff', border: '1px solid #7dd3fc', borderRadius: '4px', textAlign: 'center', fontSize: '14px', padding: '2px', outline: 'none' }} 
                                       />
                                     </div>
                                   </div>
 
                                   <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: '8px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#64748b' }}>
-                                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Custos Fixos:</span><strong style={{color:'#d97706'}}>-R$ {deducaoFaturReais.toFixed(2)}</strong></div>
-                                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Taxas Gerais:</span><strong style={{color:'#7c3aed'}}>-R$ {deducaoGeraisReais.toFixed(2)}</strong></div>
-                                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Canal/App:</span><strong style={{color:'#0284c7'}}>-R$ {deducaoCanalReais.toFixed(2)}</strong></div>
+                                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Custos Fixos:</span><strong style={{color:'#d97706'}}>-R$ {Number(deducaoFaturReais || 0).toFixed(2)}</strong></div>
+                                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Taxas Gerais:</span><strong style={{color:'#7c3aed'}}>-R$ {Number(deducaoGeraisReais || 0).toFixed(2)}</strong></div>
+                                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Canal/App:</span><strong style={{color:'#0284c7'}}>-R$ {Number(deducaoCanalReais || 0).toFixed(2)}</strong></div>
                                   </div>
                                 </>
                               )}
@@ -916,8 +962,8 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                             
                             {!invalido && (
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: lucroRealReais >= 0 ? '#dcfce7' : '#fee2e2', padding: '8px 10px', borderRadius: '6px', border: `1px solid ${lucroRealReais >= 0 ? '#bbf7d0' : '#fecaca'}`, marginTop: '10px' }}>
-                                <span style={{ color: lucroRealReais >= 0 ? '#16a34a' : '#dc2626', fontWeight: '850', fontSize: '11px' }}>LUCRO ({lucroRealPerc.toFixed(1)}%):</span>
-                                <span style={{ color: lucroRealReais >= 0 ? '#15803d' : '#991b1b', fontWeight: '900', fontSize: '15px' }}>R$ {lucroRealReais.toFixed(2)}</span>
+                                <span style={{ color: lucroRealReais >= 0 ? '#16a34a' : '#dc2626', fontWeight: '850', fontSize: '11px' }}>LUCRO ({Number(lucroRealPerc || 0).toFixed(1)}%):</span>
+                                <span style={{ color: lucroRealReais >= 0 ? '#15803d' : '#991b1b', fontWeight: '900', fontSize: '15px' }}>R$ {Number(lucroRealReais || 0).toFixed(2)}</span>
                               </div>
                             )}
                           </div>
@@ -939,10 +985,10 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
       {moduloAtivo === 'CUSTOS' && (
         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #ef4444', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>CUSTOS FIXOS TOTAIS</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#111827', marginTop: '4px' }}>R$ {totalCustosMensaisFixos.toFixed(2)}</div></div>
-            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #f59e0b', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>% S/ FATURAMENTO</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#111827', marginTop: '4px' }}>{percentualSobreFaturamento.toFixed(1)}%</div></div>
-            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #8b5cf6', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>TAXAS GERAIS (NF/Perda)</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#111827', marginTop: '4px' }}>{totalTaxasPercentuaisGerais.toFixed(1)}%</div></div>
-            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #10b981', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>VALOR/HORA OBTIDO</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#10b981', marginTop: '4px' }}>R$ {valorDaHoraCalc.toFixed(2)}</div></div>
+            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #ef4444', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>CUSTOS FIXOS TOTAIS</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#111827', marginTop: '4px' }}>R$ {Number(totalCustosMensaisFixos || 0).toFixed(2)}</div></div>
+            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #f59e0b', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>% S/ FATURAMENTO</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#111827', marginTop: '4px' }}>{Number(percentualSobreFaturamento || 0).toFixed(1)}%</div></div>
+            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #8b5cf6', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>TAXAS GERAIS (NF/Perda)</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#111827', marginTop: '4px' }}>{Number(totalTaxasPercentuaisGerais || 0).toFixed(1)}%</div></div>
+            <div className="card-app" style={{ padding: '16px', borderLeft: '4px solid #10b981', backgroundColor: '#fff' }}><small style={{ color: '#6b7280', fontWeight: '700', fontSize: '11px' }}>VALOR/HORA OBTIDO</small><div style={{ fontSize: '24px', fontWeight: '850', color: '#10b981', marginTop: '4px' }}>R$ {Number(valorDaHoraCalc || 0).toFixed(2)}</div></div>
           </div>
 
           <div className="card-app" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px', backgroundColor: '#eff6ff', padding: '18px', border: '1px solid #bfdbfe' }}>
@@ -964,13 +1010,13 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
           {todasCategoriasAgrupadas.map(cat => {
             const despesasDessaCat = itensCusto.filter(i => i.categoria === cat);
             const isPerc = despesasDessaCat.some(i => i.is_percentual) || cat.includes('%') || cat.includes('Taxas');
-            const somado = despesasDessaCat.reduce((acc, i) => acc + parseFloat(i.valor), 0);
+            const somado = despesasDessaCat.reduce((acc, i) => acc + parseFloat(i.valor || 0), 0);
 
             return (
               <div className="card-app" key={cat} style={{ marginBottom: '16px', padding: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6', paddingBottom: '12px', marginBottom: '12px' }}>
                   <div><h4 style={{ margin: 0, fontSize: '16px', color: '#1e3a8a', fontWeight: '800' }}>{cat}</h4><small style={{ color: '#9ca3af', fontWeight: '600' }}>{despesasDessaCat.length} {despesasDessaCat.length === 1 ? 'item' : 'itens'}</small></div>
-                  <div style={{ fontSize: '18px', fontWeight: '900', color: '#111827' }}>{isPerc ? `${somado.toFixed(1)}%` : `R$ ${somado.toFixed(2)}`}</div>
+                  <div style={{ fontSize: '18px', fontWeight: '900', color: '#111827' }}>{isPerc ? `${Number(somado || 0).toFixed(1)}%` : `R$ ${Number(somado || 0).toFixed(2)}`}</div>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -978,7 +1024,7 @@ export default function Delivery({ setSistemaAtivo, mostrarNotificacao }) {
                     <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
                       <span style={{ fontWeight: '600', color: '#374151', fontSize: '14px' }}>{it.nome}</span>
                       <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                        <span style={{ fontWeight: '800', color: '#111827', fontSize: '14px' }}>{it.is_percentual ? `${it.valor}%` : `R$ ${it.valor.toFixed(2)}`}</span>
+                        <span style={{ fontWeight: '800', color: '#111827', fontSize: '14px' }}>{it.is_percentual ? `${it.valor}%` : `R$ ${Number(it.valor || 0).toFixed(2)}`}</span>
                         <div style={{ display: 'flex', gap: '2px' }}>
                           <button type="button" onClick={() => { setEdicaoCustoId(it.id); setFormCusto({ nome: it.nome, valor: it.valor.toString(), categoria: it.categoria, is_percentual: it.is_percentual, novaCategoria: '' }); setModalCustoAberto(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}>✏️</button>
                           <button type="button" onClick={() => setModalExclusao({ aberto: true, tipo: 'CUSTO', item: it })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}>🗑️</button>
